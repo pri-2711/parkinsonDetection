@@ -1,103 +1,42 @@
 # Parkinson's Detection and Severity Estimation
 
-## Overview
-A multimodal machine learning system for Parkinson's Disease (PD) detection using **tremor, speech, and handwriting**. Each modality has an individual classifier, and their outputs are combined using a fusion model.
+This repository contains two separate research tasks: subject-level Parkinson's classification from tremor, speech, and handwriting, and motor-UPDRS regression from telemonitoring recordings. No multimodal classifier is trained because the classification cohorts do not share matched participants.
 
-A separate regression model estimates **Motor UPDRS** using the Parkinson's Telemonitoring dataset.
+## Reproducible pipeline
 
-## Datasets
+Run from the repository root:
 
-### Tremor
-- ~130 participants
-- 65 variables
-- Used for PD vs Healthy classification
-
-### Speech
-- 240 recordings from 80 subjects
-- ~48 acoustic feature columns
-- Includes MFCC, jitter, shimmer, HNR, RPDE, DFA and other features
-- `Status`: 0 = Healthy, 1 = Parkinson's
-- Used for PD classification
-
-### Handwriting
-- 40 participants: 15 Control and 25 Parkinson's
-- X, Y, Z, Pressure, GripAngle, Timestamp and Test ID
-- Requires feature engineering before classification
-
-### Severity Dataset
-**Parkinson's Telemonitoring Dataset**
-- ~5,875 voice recordings from 42 subjects
-- Contains voice features and `motor_UPDRS` / `total_UPDRS`
-- Used for severity regression
-- Initial target: **Motor UPDRS**
-
-## Architecture
-
-```text
-Handwriting → Classifier ─┐
-Speech     → Classifier ──┼→ Fusion Model → PD Probability
-Tremor     → Classifier ──┘
-
-Voice → UPDRS Regression Model → Estimated Motor UPDRS
+```powershell
+python scripts/run_all.py
 ```
 
-The classification and severity tracks are trained independently.
+The entry point regenerates cleaned tables and handwriting participant/test features from the raw files (raw files are never edited), validates and profiles the data, performs grouped evaluation, fits final pipelines, and writes reports/artifacts. `python main.py` remains a compatibility entry point.
 
-## User Testing
+## Design
 
-1. **Handwriting:** User performs a spiral drawing; movement and pressure data are converted into engineered features.
-2. **Speech:** User provides a voice recording; acoustic features are extracted automatically.
-3. **Tremor:** Manual tremor input in the current version. Automatic sensor-based measurement is future scope.
+- Speech groups by `id`; handwriting groups by `participant_id`; tremor groups by `participant_code`; telemonitoring groups by `subject_number`.
+- Classification uses five-fold `StratifiedGroupKFold`; regression uses five-fold `GroupKFold`. Preprocessing/imputation and sigmoid probability calibration are fitted within training folds.
+- Classification compares calibrated RBF SVM and calibrated Random Forest. Nested grouped validation chooses an SVM/RF blend weight from 0.0 through 1.0. The selection score is the mean of ROC-AUC and F1 at probability threshold 0.5; ties use recall then closeness to equal weights. Outer folds estimate performance.
+- Severity regression compares Ridge and Random Forest against a training-fold mean baseline. `total_updrs` and subject ID are excluded from predictors.
+- Handwriting features are compact participant/test aggregates. Source trajectory order and participant/test boundaries are preserved; model folds group by participant and omit participant/test identifiers.
+- The tremor target follows the current source convention (`participant_code` beginning with `PD`); predictors are limited to UPDRS items 20 and 21.
 
-## Preprocessing Pipeline
-
-The repository separates raw data, cleaning, feature engineering, and later model preprocessing:
-
-```text
-raw_dataset/ -> cleaningPipeline/ -> cleaned_dataset/ -> featureEngineering/ -> model training
-```
-
-Run the cleaners from the project root:
+## Layout
 
 ```text
-python cleaningPipeline/tremor_cleaning.py
-python cleaningPipeline/speech_cleaning.py
-python cleaningPipeline/handwriting_cleaning.py
-python cleaningPipeline/telemonitoring_cleaning.py
-python featureEngineering/handwriting_features.py
+src/                    Pipeline configuration, modeling, grouped evaluation
+scripts/run_all.py      Single complete pipeline entry point
+cleaningPipeline/       Deterministic raw-to-clean data transforms
+featureEngineering/     Handwriting trajectory aggregation
+raw_dataset/            Original source data (read only)
+cleaned_dataset/        Cleaned source tables
+models/artifacts/       Joblib model bundles, out-of-fold predictions, run config
+reports/data_profile/   Dataset profiles
+reports/feature_analysis/ Feature summaries and correlations
+reports/leakage_audit/  Handwriting leakage audit
+reports/model_results/ Per-task metrics and weight comparisons
+reports/FINAL_REPORT.md Pipeline findings and interpretation
+reports/IMPLEMENTATION_PLAN.md Initial inspection and implementation plan
 ```
 
-The cleaning scripts do not fit scalers or train models. `cleaningPipeline/preprocessing.py` provides reusable scikit-learn preprocessing helpers. Call `fit_on_training_data` only with the training partition, use `transform` for validation/test data, and use `save_preprocessor` for deployment artifacts.
-
-Handwriting cleaning uses `raw_dataset/handwriting+spiralTest/hw_dataset`, which contains the stated 15 control and 25 Parkinson participant files. The cleaned trajectory table intentionally retains ordered points and participant/test keys. `featureEngineering/handwriting_features.csv` is the participant/test-level table used for later modeling. The Parkinson-only `new_dataset` folder is left untouched and is not mixed into the balanced source used here.
-
-Speech cleaning preserves `id` and `recording`. The 240 recordings from 80 subjects must be split by `id`, never randomly by row. The same subject-level grouping must be used for cross-validation.
-
-Telemonitoring cleaning preserves `subject_number` so longitudinal recordings can also be grouped by subject during later model evaluation.
-
-## Evaluation
-
-**Classification:** Accuracy, Precision, Recall, F1-score, ROC-AUC and Confusion Matrix.
-
-**Regression:** MAE, RMSE and R².
-
-## Technology Stack
-
-- Python
-- NumPy, Pandas
-- Scikit-learn
-- SciPy
-- Imbalanced-learn
-- Praat-Parselmouth / openSMILE / Librosa
-- Matplotlib, Seaborn
-- Flask or FastAPI
-- Joblib
-
-## Future Scope
-
-- IoT-based tremor measurement using accelerometer/gyroscope sensors
-- Larger clinically labelled datasets
-- Improved multimodal severity estimation
-- Mobile/cloud deployment
-
-> This system is intended for research and screening purposes and is not a substitute for clinical diagnosis.
+Install Python dependencies with `pip install -r requirements.txt`. See generated reports for results and the limitations of the small, unmatched cohorts. A model with negative test-fold R² is not useful for unseen-subject severity prediction; unusually high handwriting scores still require external validation.

@@ -1,0 +1,43 @@
+{
+  "metrics": {
+    "ridge": {
+      "mae": 7.656178026676577,
+      "rmse": 9.08910522558033,
+      "r2": -0.25029318451456906
+    },
+    "random_forest": {
+      "mae": 8.095739312141061,
+      "rmse": 9.840877757518065,
+      "r2": -0.4656736336347336
+    },
+    "group_mean_baseline": {
+      "mae": 7.187162078848465,
+      "rmse": 8.316185501111997,
+      "r2": -0.04668966856915291
+    }
+  },
+  "target": "motor_updrs",
+  "features": [
+    "age",
+    "sex",
+    "test_time",
+    "jitter_percent",
+    "jitterabs",
+    "jitter_rap",
+    "jitter_ppq5",
+    "jitter_ddp",
+    "shimmer",
+    "shimmerdb",
+    "shimmer_apq3",
+    "shimmer_apq5",
+    "shimmer_apq11",
+    "shimmer_dda",
+    "nhr",
+    "hnr",
+    "rpde",
+    "dfa",
+    "ppe"
+  ],
+  "group_count": 42,
+  "interpretation": "Negative R2 indicates predictions were worse than predicting each test fold's mean; this is not currently a useful unseen-subject severity model."
+}

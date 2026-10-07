@@ -1,0 +1,51 @@
+{
+  "trajectory_rows": 322969,
+  "participants": 40,
+  "participant_test_rows": 110,
+  "duplicate_feature_rows": 7,
+  "cross_participant_exact_feature_signature_clusters": [
+    {
+      "participants": [
+        "P_09100003",
+        "P_09100005"
+      ],
+      "rows": 2,
+      "labels": [
+        1
+      ]
+    },
+    {
+      "participants": [
+        "C_0009",
+        "C_0010",
+        "C_0011",
+        "C_0012",
+        "C_0013",
+        "C_0014",
+        "C_0015"
+      ],
+      "rows": 7,
+      "labels": [
+        0
+      ]
+    }
+  ],
+  "split_grouping": "Participants sharing an exact engineered feature signature are kept in one fold.",
+  "participants_with_inconsistent_labels": 0,
+  "tests_per_participant": {
+    "2": 10,
+    "3": 30
+  },
+  "class_counts_by_participant": {
+    "0": 15,
+    "1": 25
+  },
+  "trajectory_order_preserved": true,
+  "participant_identifier_excluded_from_model_features": true,
+  "test_identifier_excluded_from_model_features": true,
+  "folds_grouped_by_participant_id_and_exact_duplicate_component": true,
+  "known_limits": [
+    "Only 40 participants; participant-level test rows within a fold are correlated.",
+    "High scores need external participant-level validation."
+  ]
+}

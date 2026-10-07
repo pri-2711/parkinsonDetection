@@ -1,0 +1,24 @@
+{
+  "seed": 42,
+  "outer_folds": 5,
+  "calibration_folds": 3,
+  "ensemble_weights": [
+    0.0,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    1.0
+  ],
+  "selection_score": "mean(ROC-AUC, F1 at 0.5); ties by recall then closeness to equal weights",
+  "classification_models": [
+    "calibrated RBF SVM",
+    "calibrated Random Forest"
+  ],
+  "final_fusion": "not trained: no matched cross-modality cohort"
+}

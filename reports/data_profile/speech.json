@@ -1,0 +1,15 @@
+{
+  "dataset": "speech",
+  "task": "classification",
+  "rows": 240,
+  "features": 45,
+  "groups": 80,
+  "missing_cells_predictors": 0,
+  "duplicate_rows": 0,
+  "target_summary": {
+    "0": 120,
+    "1": 120
+  },
+  "participants": 80,
+  "split_groups": 80
+}

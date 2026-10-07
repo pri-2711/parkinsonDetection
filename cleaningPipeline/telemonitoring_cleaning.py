@@ -23,9 +23,7 @@ def clean_telemonitoring() -> pd.DataFrame:
         numeric = pd.to_numeric(data[column], errors="coerce")
         if numeric.notna().sum() == data[column].notna().sum():
             data[column] = numeric
-    for column in data.select_dtypes(include=np.number).columns:
-        if data[column].isna().any():
-            data[column] = data[column].fillna(data[column].median())
+    # Keep missing values intact. Imputation belongs inside each training fold.
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(OUTPUT, index=False)
     print(f"Telemonitoring cleaning report: raw={raw.shape}, clean={data.shape}, subjects={data['subject_number'].nunique()}, duplicates_removed={duplicate_count}, missing={int(data.isna().sum().sum())}")

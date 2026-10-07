@@ -1,0 +1,15 @@
+{
+  "dataset": "handwriting",
+  "task": "classification",
+  "rows": 110,
+  "features": 16,
+  "groups": 33,
+  "missing_cells_predictors": 0,
+  "duplicate_rows": 0,
+  "target_summary": {
+    "1": 73,
+    "0": 37
+  },
+  "participants": 40,
+  "split_groups": 33
+}

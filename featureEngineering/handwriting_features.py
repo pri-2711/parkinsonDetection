@@ -15,7 +15,8 @@ def _safe_std(values: pd.Series) -> float:
 
 def extract_features(group: pd.DataFrame) -> pd.Series:
     participant_id, test_id = group.name
-    group = group.sort_values("timestamp").reset_index(drop=True)
+    # Source row order is the trajectory order. Timestamps can be non-monotonic.
+    group = group.sort_values("point_index").reset_index(drop=True)
     x = group["x"].to_numpy(dtype=float)
     y = group["y"].to_numpy(dtype=float)
     pressure = group["pressure"].to_numpy(dtype=float)
