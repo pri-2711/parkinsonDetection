@@ -1,0 +1,1 @@
+"""Model training modules for the Parkinson detection project."""

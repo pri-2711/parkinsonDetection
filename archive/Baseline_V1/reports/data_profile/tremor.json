@@ -1,0 +1,15 @@
+{
+  "dataset": "tremor",
+  "task": "classification",
+  "rows": 130,
+  "features": 7,
+  "groups": 130,
+  "missing_cells_predictors": 350,
+  "duplicate_rows": 0,
+  "target_summary": {
+    "0": 100,
+    "1": 30
+  },
+  "participants": 130,
+  "split_groups": 130
+}

@@ -1,0 +1,369 @@
+{
+  "modality": "handwriting",
+  "row_count": 110,
+  "feature_count": 16,
+  "participant_groups": 33,
+  "metrics": {
+    "baseline_svm": {
+      "accuracy": 0.9733333333333334,
+      "precision": 0.9672131147540983,
+      "recall": 1.0,
+      "f1": 0.9833333333333333,
+      "roc_auc": 0.9523305084745762
+    },
+    "tuned_svm": {
+      "accuracy": 0.9466666666666667,
+      "precision": 0.9661016949152542,
+      "recall": 0.9661016949152542,
+      "f1": 0.9661016949152542,
+      "roc_auc": 0.9322033898305084
+    },
+    "baseline_random_forest": {
+      "accuracy": 0.96,
+      "precision": 0.9666666666666667,
+      "recall": 0.9830508474576272,
+      "f1": 0.9747899159663865,
+      "roc_auc": 0.9088983050847458
+    },
+    "tuned_random_forest": {
+      "accuracy": 0.96,
+      "precision": 0.9666666666666667,
+      "recall": 0.9830508474576272,
+      "f1": 0.9747899159663865,
+      "roc_auc": 0.9459745762711864
+    },
+    "nested_selected": {
+      "accuracy": 0.9466666666666667,
+      "precision": 0.9661016949152542,
+      "recall": 0.9661016949152542,
+      "f1": 0.9661016949152542,
+      "roc_auc": 0.9459745762711864
+    },
+    "reported_rows": 75,
+    "excluded_fusion_validation_rows": 35
+  },
+  "outer_fold_metrics": [
+    {
+      "fold": 2,
+      "rows": 19,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.9529761904761904,
+      "random_forest_inner_best_roc_auc": 0.9523809523809523,
+      "baseline_svm": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "tuned_svm": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "baseline_random_forest": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "tuned_random_forest": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "nested_selected": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      }
+    },
+    {
+      "fold": 3,
+      "rows": 19,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.9583333333333334,
+      "random_forest_inner_best_roc_auc": 0.9404761904761905,
+      "baseline_svm": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "tuned_svm": {
+        "accuracy": 0.8947368421052632,
+        "precision": 1.0,
+        "recall": 0.8666666666666667,
+        "f1": 0.9285714285714286,
+        "roc_auc": 1.0
+      },
+      "baseline_random_forest": {
+        "accuracy": 0.9473684210526315,
+        "precision": 1.0,
+        "recall": 0.9333333333333333,
+        "f1": 0.9655172413793104,
+        "roc_auc": 1.0
+      },
+      "tuned_random_forest": {
+        "accuracy": 0.9473684210526315,
+        "precision": 1.0,
+        "recall": 0.9333333333333333,
+        "f1": 0.9655172413793104,
+        "roc_auc": 1.0
+      },
+      "nested_selected": {
+        "accuracy": 0.8947368421052632,
+        "precision": 1.0,
+        "recall": 0.8666666666666667,
+        "f1": 0.9285714285714286,
+        "roc_auc": 1.0
+      }
+    },
+    {
+      "fold": 4,
+      "rows": 19,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.944047619047619,
+      "random_forest_inner_best_roc_auc": 0.9232142857142858,
+      "baseline_svm": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "tuned_svm": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "baseline_random_forest": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "tuned_random_forest": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "nested_selected": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      }
+    },
+    {
+      "fold": 5,
+      "rows": 18,
+      "selected_family": "random_forest",
+      "svm_inner_best_roc_auc": 0.9958333333333333,
+      "random_forest_inner_best_roc_auc": 1.0,
+      "baseline_svm": {
+        "accuracy": 0.8888888888888888,
+        "precision": 0.875,
+        "recall": 1.0,
+        "f1": 0.9333333333333333,
+        "roc_auc": 0.8392857142857143
+      },
+      "tuned_svm": {
+        "accuracy": 0.8888888888888888,
+        "precision": 0.875,
+        "recall": 1.0,
+        "f1": 0.9333333333333333,
+        "roc_auc": 0.875
+      },
+      "baseline_random_forest": {
+        "accuracy": 0.8888888888888888,
+        "precision": 0.875,
+        "recall": 1.0,
+        "f1": 0.9333333333333333,
+        "roc_auc": 0.75
+      },
+      "tuned_random_forest": {
+        "accuracy": 0.8888888888888888,
+        "precision": 0.875,
+        "recall": 1.0,
+        "f1": 0.9333333333333333,
+        "roc_auc": 0.9285714285714286
+      },
+      "nested_selected": {
+        "accuracy": 0.8888888888888888,
+        "precision": 0.875,
+        "recall": 1.0,
+        "f1": 0.9333333333333333,
+        "roc_auc": 0.9285714285714286
+      }
+    }
+  ],
+  "outer_fold_best_params": {
+    "svm": [
+      {
+        "fold": 1,
+        "best_params": {
+          "model__C": 0.1,
+          "model__class_weight": "balanced",
+          "model__gamma": 0.01
+        },
+        "inner_best_roc_auc": 0.9910714285714286
+      },
+      {
+        "fold": 2,
+        "best_params": {
+          "model__C": 0.1,
+          "model__class_weight": null,
+          "model__gamma": 0.01
+        },
+        "inner_best_roc_auc": 0.9529761904761904
+      },
+      {
+        "fold": 3,
+        "best_params": {
+          "model__C": 1.0,
+          "model__class_weight": null,
+          "model__gamma": 0.01
+        },
+        "inner_best_roc_auc": 0.9583333333333334
+      },
+      {
+        "fold": 4,
+        "best_params": {
+          "model__C": 10.0,
+          "model__class_weight": null,
+          "model__gamma": 0.01
+        },
+        "inner_best_roc_auc": 0.944047619047619
+      },
+      {
+        "fold": 5,
+        "best_params": {
+          "model__C": 10.0,
+          "model__class_weight": null,
+          "model__gamma": 0.01
+        },
+        "inner_best_roc_auc": 0.9958333333333333
+      }
+    ],
+    "random_forest": [
+      {
+        "fold": 1,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": "sqrt",
+          "model__min_samples_leaf": 10,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.9910714285714286
+      },
+      {
+        "fold": 2,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": 0.5,
+          "model__min_samples_leaf": 3,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.9523809523809523
+      },
+      {
+        "fold": 3,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": 0.5,
+          "model__min_samples_leaf": 10,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.9404761904761905
+      },
+      {
+        "fold": 4,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": 0.5,
+          "model__min_samples_leaf": 6,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.9232142857142858
+      },
+      {
+        "fold": 5,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": "sqrt",
+          "model__min_samples_leaf": 10,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 1.0
+      }
+    ]
+  },
+  "selected_family_by_outer_fold": {
+    "1": "svm",
+    "2": "svm",
+    "3": "svm",
+    "4": "svm",
+    "5": "random_forest"
+  },
+  "deployment_selection_metric": "highest mean inner group-CV ROC-AUC on the full available cohort",
+  "deployment_family": "svm",
+  "deployment_artifacts": {
+    "svm": {
+      "best_params": {
+        "model__C": 0.1,
+        "model__class_weight": null,
+        "model__gamma": 0.01
+      },
+      "inner_cv_best_roc_auc": 0.9662524366471735,
+      "artifact": "results\\artifacts\\handwriting_svm_tuned.joblib",
+      "inference_smoke_rows": 3
+    },
+    "random_forest": {
+      "best_params": {
+        "model__class_weight": null,
+        "model__max_depth": 4,
+        "model__max_features": 0.5,
+        "model__min_samples_leaf": 10,
+        "model__n_estimators": 300
+      },
+      "inner_cv_best_roc_auc": 0.9606481481481481,
+      "artifact": "results\\artifacts\\handwriting_random_forest_tuned.joblib",
+      "inference_smoke_rows": 3
+    }
+  },
+  "fusion_weight_validation": {
+    "n_validation_rows": 35,
+    "validation_auc": 0.9047619047619049,
+    "selected_inner_oof_svm_weight": 0.4,
+    "selected_inner_oof_rf_weight": 0.6,
+    "outer_test_metric_used": false
+  },
+  "fusion_validation_fold": 1,
+  "reported_test_folds": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "baseline_source": "archive/Baseline_V1/models/artifacts/handwriting_oof_predictions.csv"
+}

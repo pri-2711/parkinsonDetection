@@ -1,0 +1,123 @@
+{
+  "config": {
+    "experiment_name": "regularized_svm_rf",
+    "baseline": "Baseline V1",
+    "baseline_root": "../../archive/Baseline_V1",
+    "status": "completed",
+    "models": {
+      "svm": {
+        "pipeline": [
+          "median_imputation",
+          "standard_scaling",
+          "rbf_svc",
+          "sigmoid_calibration"
+        ],
+        "search_space": {
+          "C": [
+            0.1,
+            1.0,
+            10.0
+          ],
+          "gamma": [
+            "scale",
+            0.01,
+            0.1
+          ],
+          "class_weight": [
+            null,
+            "balanced"
+          ]
+        }
+      },
+      "random_forest": {
+        "pipeline": [
+          "median_imputation",
+          "random_forest",
+          "sigmoid_calibration"
+        ],
+        "search_space": {
+          "n_estimators": [
+            300
+          ],
+          "max_depth": [
+            4,
+            8
+          ],
+          "min_samples_leaf": [
+            3,
+            6,
+            10
+          ],
+          "max_features": [
+            "sqrt",
+            0.5
+          ],
+          "class_weight": [
+            null,
+            "balanced"
+          ]
+        }
+      }
+    },
+    "classification_datasets": {
+      "speech": {
+        "target": "status",
+        "group": "id"
+      },
+      "handwriting": {
+        "target": "label",
+        "group": "participant_id"
+      },
+      "tremor": {
+        "target": "participant_code_prefix_PD",
+        "group": "participant_code",
+        "features": "UPDRS items 20 and 21"
+      }
+    },
+    "validation": {
+      "outer_splitter": "StratifiedGroupKFold",
+      "outer_folds": 5,
+      "inner_splitter": "StratifiedGroupKFold",
+      "inner_folds": 4,
+      "calibration_splitter": "StratifiedGroupKFold",
+      "calibration_folds": 3,
+      "random_seed": 42,
+      "selection_metric": "ROC-AUC",
+      "reported_metrics": [
+        "ROC-AUC",
+        "F1",
+        "recall"
+      ],
+      "classification_threshold": 0.5
+    },
+    "outputs_directory": "results",
+    "notes": [
+      "No patient-level fusion dataset will be created from the unmatched cohorts.",
+      "All learned preprocessing and calibration must be fitted inside training folds.",
+      "This configuration does not change or replace Baseline V1."
+    ],
+    "completed_run_report": "results/TUNING_REPORT.md"
+  },
+  "seed": 42,
+  "versions": {
+    "python": "3.12.2",
+    "scikit_learn": "1.8.0",
+    "pandas": "2.2.2",
+    "numpy": "1.26.4",
+    "joblib": "1.5.3"
+  },
+  "baseline_root": "D:\\projects\\parkinson_detection_project\\archive\\Baseline_V1",
+  "baseline_manifest": "archive/Baseline_V1/ARCHIVE_MANIFEST.json",
+  "baseline_oof_sha256": {
+    "archive\\Baseline_V1\\models\\artifacts\\speech_oof_predictions.csv": "83b87286232076d3a17f034e572054f296bec7d4a7486aa37a870917eca45476",
+    "archive\\Baseline_V1\\models\\artifacts\\handwriting_oof_predictions.csv": "e0cdf632f2fd551d0fd861cd10fc0e5073495df3cbb7feb303dd50bf0da7238e",
+    "archive\\Baseline_V1\\models\\artifacts\\tremor_oof_predictions.csv": "b652eb341e4dd400992814dff7b3fa741e3aa3674337c76376f25ce8383e943a"
+  },
+  "outer_test_folds_scored": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "fusion_validation_fold": 1
+}

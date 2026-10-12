@@ -1,0 +1,50 @@
+{
+  "experiment_name": "regularized_svm_rf",
+  "baseline": "Baseline V1",
+  "baseline_root": "../../archive/Baseline_V1",
+  "status": "completed",
+  "models": {
+    "svm": {
+      "pipeline": ["median_imputation", "standard_scaling", "rbf_svc", "sigmoid_calibration"],
+      "search_space": {
+        "C": [0.1, 1.0, 10.0],
+        "gamma": ["scale", 0.01, 0.1],
+        "class_weight": [null, "balanced"]
+      }
+    },
+    "random_forest": {
+      "pipeline": ["median_imputation", "random_forest", "sigmoid_calibration"],
+      "search_space": {
+        "n_estimators": [300],
+        "max_depth": [4, 8],
+        "min_samples_leaf": [3, 6, 10],
+        "max_features": ["sqrt", 0.5],
+        "class_weight": [null, "balanced"]
+      }
+    }
+  },
+  "classification_datasets": {
+    "speech": {"target": "status", "group": "id"},
+    "handwriting": {"target": "label", "group": "participant_id"},
+    "tremor": {"target": "participant_code_prefix_PD", "group": "participant_code", "features": "UPDRS items 20 and 21"}
+  },
+  "validation": {
+    "outer_splitter": "StratifiedGroupKFold",
+    "outer_folds": 5,
+    "inner_splitter": "StratifiedGroupKFold",
+    "inner_folds": 4,
+    "calibration_splitter": "StratifiedGroupKFold",
+    "calibration_folds": 3,
+    "random_seed": 42,
+    "selection_metric": "ROC-AUC",
+    "reported_metrics": ["ROC-AUC", "F1", "recall"],
+    "classification_threshold": 0.5
+  },
+  "outputs_directory": "results",
+  "completed_run_report": "results/TUNING_REPORT.md",
+  "notes": [
+    "No patient-level fusion dataset will be created from the unmatched cohorts.",
+    "All learned preprocessing and calibration must be fitted inside training folds.",
+    "This configuration does not change or replace Baseline V1."
+  ]
+}

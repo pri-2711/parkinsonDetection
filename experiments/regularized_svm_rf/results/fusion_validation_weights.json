@@ -1,0 +1,31 @@
+{
+  "method": "existing AUC-normalized late-fusion formula; reliability AUC from reserved group validation fold only",
+  "validation_auc": {
+    "speech": 0.9409722222222222,
+    "handwriting": 0.9047619047619049,
+    "tremor": 0.8416666666666667
+  },
+  "normalized_weights": {
+    "speech": 0.3501421241094171,
+    "handwriting": 0.3366680202296135,
+    "tremor": 0.3131898556609694
+  },
+  "weights_sum": 1.0,
+  "test_fold_labels_used": false,
+  "test_fold_metrics_used": false,
+  "missing_modalities": "src.fusion.fuse_probabilities omits unavailable modalities and renormalizes remaining weights",
+  "validation_fold": 1,
+  "patient_level_fusion_performance": null,
+  "baseline_v1_outer_oof_auc": {
+    "speech": 0.8353472222222222,
+    "handwriting": 0.8052573121066271,
+    "tremor": 0.8504999999999999
+  },
+  "baseline_v1_outer_oof_weights": {
+    "speech": 0.3353320628302259,
+    "handwriting": 0.3232531196542415,
+    "tremor": 0.34141481751553265
+  },
+  "baseline_v1_oof_weights_sum": 1.0,
+  "baseline_v1_oof_labels_were_used_for_weights": true
+}

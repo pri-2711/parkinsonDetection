@@ -1,0 +1,15 @@
+{
+  "baseline": "Baseline V1",
+  "verification_passed": true,
+  "method": "Validate manifest SHA-256 entries, load saved model bundles, run inference on three archived feature rows per model, and recompute OOF metrics from archived predictions.",
+  "manifest_files_verified": 233,
+  "model_refitting_performed": false,
+  "random_seed": 42,
+  "fusion_weights_sum_to_one": true,
+  "datasets": {
+    "speech": {"model_bundle_loaded": true, "inference_rows": 3, "oof_rows": 240, "metrics_reproduced": true},
+    "handwriting": {"model_bundle_loaded": true, "inference_rows": 3, "oof_rows": 110, "metrics_reproduced": true},
+    "tremor": {"model_bundle_loaded": true, "inference_rows": 3, "oof_rows": 130, "metrics_reproduced": true},
+    "telemonitoring": {"model_bundle_loaded": true, "inference_rows": 3, "oof_rows": 5875, "metrics_reproduced": true}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "dataset": "telemonitoring",
+  "task": "regression",
+  "rows": 5875,
+  "features": 19,
+  "groups": 42,
+  "missing_cells_predictors": 0,
+  "duplicate_rows": 0,
+  "target_summary": {
+    "mean": 21.29622854468085,
+    "std": 8.12928152405538,
+    "min": 5.0377,
+    "max": 39.511
+  }
+}

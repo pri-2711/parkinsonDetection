@@ -1,0 +1,26 @@
+{
+  "methodology_version": "auc-normalized-late-fusion-v1",
+  "created_utc": "2026-10-06T09:05:11.204357+00:00",
+  "validation_ROC_AUC": {
+    "speech": 0.8353472222222222,
+    "handwriting": 0.8052573121066271,
+    "tremor": 0.8504999999999999
+  },
+  "raw_weights": {
+    "speech": 0.8353472222222222,
+    "handwriting": 0.8052573121066271,
+    "tremor": 0.8504999999999999
+  },
+  "normalized_weights": {
+    "speech": 0.3353320628302259,
+    "handwriting": 0.3232531196542415,
+    "tremor": 0.34141481751553265
+  },
+  "weighting_metric": "nested subject-grouped out-of-fold ROC-AUC of each modality's existing SVM/RF ensemble_probability",
+  "weighting_formula": "weight_i = ROC_AUC_i / sum(ROC_AUC_speech, ROC_AUC_handwriting, ROC_AUC_tremor)",
+  "classification_threshold": 0.5,
+  "oof_prediction_source": "models/artifacts/{speech,handwriting,tremor}_oof_predictions.csv; actual and ensemble_probability columns",
+  "fusion_level": "decision-level probability fusion; modalities are not joined by participant",
+  "experimental_fusion_metrics": null,
+  "limitation": "The three modality cohorts are independent and unmatched. Weights use modality-specific OOF reliability; fused patient-level performance has not been measured."
+}

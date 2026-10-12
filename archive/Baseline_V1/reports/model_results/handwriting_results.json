@@ -1,0 +1,51 @@
+{
+  "dataset": "handwriting",
+  "profile": {
+    "dataset": "handwriting",
+    "task": "classification",
+    "rows": 110,
+    "features": 16,
+    "groups": 33,
+    "missing_cells_predictors": 0,
+    "duplicate_rows": 0,
+    "target_summary": {
+      "1": 73,
+      "0": 37
+    },
+    "participants": 40,
+    "split_groups": 33
+  },
+  "outer_nested_cv_metrics": {
+    "svm": {
+      "accuracy": 0.8909090909090909,
+      "precision": 0.8588235294117647,
+      "recall": 1.0,
+      "f1": 0.9240506329113924,
+      "roc_auc": 0.8119215105516475
+    },
+    "random_forest": {
+      "accuracy": 0.9090909090909091,
+      "precision": 0.8888888888888888,
+      "recall": 0.9863013698630136,
+      "f1": 0.935064935064935,
+      "roc_auc": 0.8097001110699742
+    },
+    "ensemble": {
+      "accuracy": 0.8909090909090909,
+      "precision": 0.8674698795180723,
+      "recall": 0.9863013698630136,
+      "f1": 0.9230769230769231,
+      "roc_auc": 0.8052573121066271
+    }
+  },
+  "final_weight_selection_from_full_cohort_oof": {
+    "accuracy": 0.8909090909090909,
+    "precision": 0.8588235294117647,
+    "recall": 1.0,
+    "f1": 0.9240506329113924,
+    "roc_auc": 0.821917808219178,
+    "svm_weight": 0.8,
+    "rf_weight": 0.2,
+    "selection_score": 0.8729842205652852
+  }
+}

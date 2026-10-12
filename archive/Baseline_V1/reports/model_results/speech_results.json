@@ -1,0 +1,51 @@
+{
+  "dataset": "speech",
+  "profile": {
+    "dataset": "speech",
+    "task": "classification",
+    "rows": 240,
+    "features": 45,
+    "groups": 80,
+    "missing_cells_predictors": 0,
+    "duplicate_rows": 0,
+    "target_summary": {
+      "0": 120,
+      "1": 120
+    },
+    "participants": 80,
+    "split_groups": 80
+  },
+  "outer_nested_cv_metrics": {
+    "svm": {
+      "accuracy": 0.7958333333333333,
+      "precision": 0.8256880733944955,
+      "recall": 0.75,
+      "f1": 0.7860262008733624,
+      "roc_auc": 0.8443055555555555
+    },
+    "random_forest": {
+      "accuracy": 0.775,
+      "precision": 0.7946428571428571,
+      "recall": 0.7416666666666667,
+      "f1": 0.7672413793103449,
+      "roc_auc": 0.8299305555555555
+    },
+    "ensemble": {
+      "accuracy": 0.7833333333333333,
+      "precision": 0.8090909090909091,
+      "recall": 0.7416666666666667,
+      "f1": 0.7739130434782608,
+      "roc_auc": 0.8353472222222222
+    }
+  },
+  "final_weight_selection_from_full_cohort_oof": {
+    "accuracy": 0.7958333333333333,
+    "precision": 0.8198198198198198,
+    "recall": 0.7583333333333333,
+    "f1": 0.7878787878787878,
+    "roc_auc": 0.8431944444444444,
+    "svm_weight": 0.9,
+    "rf_weight": 0.1,
+    "selection_score": 0.8155366161616161
+  }
+}

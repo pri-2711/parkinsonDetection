@@ -1,0 +1,369 @@
+{
+  "modality": "tremor",
+  "row_count": 130,
+  "feature_count": 7,
+  "participant_groups": 130,
+  "metrics": {
+    "baseline_svm": {
+      "accuracy": 0.8365384615384616,
+      "precision": 0.6842105263157895,
+      "recall": 0.5416666666666666,
+      "f1": 0.6046511627906976,
+      "roc_auc": 0.8304687499999999
+    },
+    "tuned_svm": {
+      "accuracy": 0.8269230769230769,
+      "precision": 0.6666666666666666,
+      "recall": 0.5,
+      "f1": 0.5714285714285714,
+      "roc_auc": 0.8997395833333334
+    },
+    "baseline_random_forest": {
+      "accuracy": 0.8076923076923077,
+      "precision": 0.6666666666666666,
+      "recall": 0.3333333333333333,
+      "f1": 0.4444444444444444,
+      "roc_auc": 0.8505208333333333
+    },
+    "tuned_random_forest": {
+      "accuracy": 0.8173076923076923,
+      "precision": 0.6666666666666666,
+      "recall": 0.4166666666666667,
+      "f1": 0.5128205128205128,
+      "roc_auc": 0.8427083333333333
+    },
+    "nested_selected": {
+      "accuracy": 0.8269230769230769,
+      "precision": 0.6666666666666666,
+      "recall": 0.5,
+      "f1": 0.5714285714285714,
+      "roc_auc": 0.8997395833333334
+    },
+    "reported_rows": 104,
+    "excluded_fusion_validation_rows": 26
+  },
+  "outer_fold_metrics": [
+    {
+      "fold": 2,
+      "rows": 26,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.8718750000000001,
+      "random_forest_inner_best_roc_auc": 0.8020833333333334,
+      "baseline_svm": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666,
+        "roc_auc": 0.8916666666666667
+      },
+      "tuned_svm": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666,
+        "roc_auc": 0.9166666666666667
+      },
+      "baseline_random_forest": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.75,
+        "recall": 0.5,
+        "f1": 0.6,
+        "roc_auc": 0.8458333333333333
+      },
+      "tuned_random_forest": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666,
+        "roc_auc": 0.8375
+      },
+      "nested_selected": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666,
+        "roc_auc": 0.9166666666666667
+      }
+    },
+    {
+      "fold": 3,
+      "rows": 26,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.890625,
+      "random_forest_inner_best_roc_auc": 0.8458333333333332,
+      "baseline_svm": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6,
+        "recall": 0.5,
+        "f1": 0.5454545454545454,
+        "roc_auc": 0.7916666666666667
+      },
+      "tuned_svm": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6,
+        "recall": 0.5,
+        "f1": 0.5454545454545454,
+        "roc_auc": 0.875
+      },
+      "baseline_random_forest": {
+        "accuracy": 0.7692307692307693,
+        "precision": 0.5,
+        "recall": 0.16666666666666666,
+        "f1": 0.25,
+        "roc_auc": 0.875
+      },
+      "tuned_random_forest": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.875
+      },
+      "nested_selected": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6,
+        "recall": 0.5,
+        "f1": 0.5454545454545454,
+        "roc_auc": 0.875
+      }
+    },
+    {
+      "fold": 4,
+      "rows": 26,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.9166666666666667,
+      "random_forest_inner_best_roc_auc": 0.8802083333333335,
+      "baseline_svm": {
+        "accuracy": 0.8846153846153846,
+        "precision": 0.8,
+        "recall": 0.6666666666666666,
+        "f1": 0.7272727272727273,
+        "roc_auc": 0.8083333333333333
+      },
+      "tuned_svm": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.75,
+        "recall": 0.5,
+        "f1": 0.6,
+        "roc_auc": 0.9166666666666667
+      },
+      "baseline_random_forest": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.8499999999999999
+      },
+      "tuned_random_forest": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.8499999999999999
+      },
+      "nested_selected": {
+        "accuracy": 0.8461538461538461,
+        "precision": 0.75,
+        "recall": 0.5,
+        "f1": 0.6,
+        "roc_auc": 0.9166666666666667
+      }
+    },
+    {
+      "fold": 5,
+      "rows": 26,
+      "selected_family": "svm",
+      "svm_inner_best_roc_auc": 0.8625000000000002,
+      "random_forest_inner_best_roc_auc": 0.8135416666666667,
+      "baseline_svm": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.9208333333333334
+      },
+      "tuned_svm": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.9208333333333334
+      },
+      "baseline_random_forest": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.9041666666666667
+      },
+      "tuned_random_forest": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.9041666666666667
+      },
+      "nested_selected": {
+        "accuracy": 0.8076923076923077,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "roc_auc": 0.9208333333333334
+      }
+    }
+  ],
+  "outer_fold_best_params": {
+    "svm": [
+      {
+        "fold": 1,
+        "best_params": {
+          "model__C": 0.1,
+          "model__class_weight": null,
+          "model__gamma": 0.01
+        },
+        "inner_best_roc_auc": 0.8875000000000001
+      },
+      {
+        "fold": 2,
+        "best_params": {
+          "model__C": 1.0,
+          "model__class_weight": null,
+          "model__gamma": 0.1
+        },
+        "inner_best_roc_auc": 0.8718750000000001
+      },
+      {
+        "fold": 3,
+        "best_params": {
+          "model__C": 0.1,
+          "model__class_weight": "balanced",
+          "model__gamma": 0.1
+        },
+        "inner_best_roc_auc": 0.890625
+      },
+      {
+        "fold": 4,
+        "best_params": {
+          "model__C": 1.0,
+          "model__class_weight": "balanced",
+          "model__gamma": 0.1
+        },
+        "inner_best_roc_auc": 0.9166666666666667
+      },
+      {
+        "fold": 5,
+        "best_params": {
+          "model__C": 0.1,
+          "model__class_weight": null,
+          "model__gamma": 0.1
+        },
+        "inner_best_roc_auc": 0.8625000000000002
+      }
+    ],
+    "random_forest": [
+      {
+        "fold": 1,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": "sqrt",
+          "model__min_samples_leaf": 3,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.8291666666666666
+      },
+      {
+        "fold": 2,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": "sqrt",
+          "model__min_samples_leaf": 3,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.8020833333333334
+      },
+      {
+        "fold": 3,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": 0.5,
+          "model__min_samples_leaf": 3,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.8458333333333332
+      },
+      {
+        "fold": 4,
+        "best_params": {
+          "model__class_weight": null,
+          "model__max_depth": 4,
+          "model__max_features": 0.5,
+          "model__min_samples_leaf": 3,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.8802083333333335
+      },
+      {
+        "fold": 5,
+        "best_params": {
+          "model__class_weight": "balanced",
+          "model__max_depth": 4,
+          "model__max_features": "sqrt",
+          "model__min_samples_leaf": 3,
+          "model__n_estimators": 300
+        },
+        "inner_best_roc_auc": 0.8135416666666667
+      }
+    ]
+  },
+  "selected_family_by_outer_fold": {
+    "1": "svm",
+    "2": "svm",
+    "3": "svm",
+    "4": "svm",
+    "5": "svm"
+  },
+  "deployment_selection_metric": "highest mean inner group-CV ROC-AUC on the full available cohort",
+  "deployment_family": "svm",
+  "deployment_artifacts": {
+    "svm": {
+      "best_params": {
+        "model__C": 1.0,
+        "model__class_weight": null,
+        "model__gamma": 0.1
+      },
+      "inner_cv_best_roc_auc": 0.8563392857142857,
+      "artifact": "results\\artifacts\\tremor_svm_tuned.joblib",
+      "inference_smoke_rows": 3
+    },
+    "random_forest": {
+      "best_params": {
+        "model__class_weight": null,
+        "model__max_depth": 8,
+        "model__max_features": 0.5,
+        "model__min_samples_leaf": 3,
+        "model__n_estimators": 300
+      },
+      "inner_cv_best_roc_auc": 0.8359821428571428,
+      "artifact": "results\\artifacts\\tremor_random_forest_tuned.joblib",
+      "inference_smoke_rows": 3
+    }
+  },
+  "fusion_weight_validation": {
+    "n_validation_rows": 26,
+    "validation_auc": 0.8416666666666667,
+    "selected_inner_oof_svm_weight": 0.8,
+    "selected_inner_oof_rf_weight": 0.19999999999999996,
+    "outer_test_metric_used": false
+  },
+  "fusion_validation_fold": 1,
+  "reported_test_folds": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "baseline_source": "archive/Baseline_V1/models/artifacts/tremor_oof_predictions.csv"
+}

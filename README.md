@@ -12,6 +12,16 @@ python scripts/run_all.py
 
 The entry point regenerates cleaned tables and handwriting participant/test features from the raw files (raw files are never edited), validates and profiles the data, performs grouped evaluation, fits final pipelines, and writes reports/artifacts. `python main.py` remains a compatibility entry point.
 
+## Isolated SVM / Random Forest tuning experiment
+
+Baseline V1 is archived under `archive/Baseline_V1` with a SHA-256 manifest. To run the separate classification tuning experiment without overwriting that archive, use:
+
+```powershell
+python experiments/regularized_svm_rf/run_experiments.py
+```
+
+The run tunes SVM and Random Forest separately for speech, handwriting, and tremor with subject-aware nested validation. It writes tuned artifacts and the baseline comparison report below `experiments/regularized_svm_rf/results`. Fold 1 is reserved for fusion-weight validation; reported classification metrics compare baseline and tuned probabilities on the remaining shared outer folds. See the experiment README/report for full commands, metrics, split details, and limitations.
+
 ## Design
 
 - Speech groups by `id`; handwriting groups by `participant_id`; tremor groups by `participant_code`; telemonitoring groups by `subject_number`.
@@ -20,6 +30,10 @@ The entry point regenerates cleaned tables and handwriting participant/test feat
 - Severity regression compares Ridge and Random Forest against a training-fold mean baseline. `total_updrs` and subject ID are excluded from predictors.
 - Handwriting features are compact participant/test aggregates. Source trajectory order and participant/test boundaries are preserved; model folds group by participant and omit participant/test identifiers.
 - The tremor target follows the current source convention (`participant_code` beginning with `PD`); predictors are limited to UPDRS items 20 and 21.
+
+## Flask assessment backend
+
+A separate Flask API prototype lives in `app_backend/`; no frontend is included. It loads the selected tuned classifiers without retraining. Speech upload validation works, but live classification is disabled because no verified raw-audio feature extractor exists. Spiral media validation works, but camera-to-tablet feature compatibility is not established. Manual tremor input is a prototype only. See [API documentation](app_backend/API.md) and [feature compatibility status](app_backend/FEATURE_COMPATIBILITY.md).
 
 ## Layout
 
