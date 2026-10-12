@@ -1,0 +1,146 @@
+:root {
+  --sage-green: #8B9A7D;
+  --sage-dark: #6B7B65;
+  --sage-light: #B8C4B5;
+  --cream: #F5F5F0;
+  --cream-dark: #E8E8E0;
+  --text-dark: #2C3E2C;
+  --text-light: #4A5A4A;
+  --error: #C1666B;
+  --success: #7D9A6B;
+  --warning: #D4A574;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--cream);
+  color: var(--text-dark);
+  line-height: 1.6;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1rem;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.btn-primary {
+  background-color: var(--sage-green);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--sage-dark);
+}
+
+.btn-secondary {
+  background-color: var(--sage-light);
+  color: var(--text-dark);
+}
+
+.btn-secondary:hover {
+  background-color: var(--sage-green);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--sage-light);
+  border-radius: 4px;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--sage-green);
+}
+
+.error {
+  color: var(--error);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.success {
+  color: var(--success);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.warning {
+  color: var(--warning);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-light);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-pending {
+  background-color: var(--cream-dark);
+  color: var(--text-light);
+}
+
+.status-completed {
+  background-color: var(--success);
+  color: white;
+}
+
+.status-failed {
+  background-color: var(--error);
+  color: white;
+}
+
+.status-unavailable {
+  background-color: var(--warning);
+  color: white;
+}

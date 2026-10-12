@@ -6,6 +6,7 @@ import logging
 import uuid
 
 from flask import Flask, g, request
+from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from app_backend.config import BackendConfig
@@ -21,6 +22,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+
     configure_logging(app.config.get("LOG_LEVEL", "INFO"))
     app.extensions["assessment_sessions"] = AssessmentSessionStore(
         ttl_seconds=app.config["SESSION_TTL_SECONDS"]
@@ -28,17 +31,28 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.extensions["model_registry"] = ModelRegistry.from_config(app.config)
 
     from app_backend.routes.assessment import assessment_bp
+    from app_backend.routes.auth import auth_bp
     from app_backend.routes.health import health_bp
+    from app_backend.routes.history import history_bp
+    from app_backend.routes.results import results_bp
     from app_backend.routes.speech import speech_bp
     from app_backend.routes.spiral import spiral_bp
     from app_backend.routes.tremor import tremor_bp
 
-    for blueprint in (health_bp, speech_bp, spiral_bp, tremor_bp, assessment_bp):
+    for blueprint in (health_bp, speech_bp, spiral_bp, tremor_bp, assessment_bp, auth_bp, history_bp, results_bp):
         app.register_blueprint(blueprint)
 
     @app.before_request
     def assign_request_id():
         g.request_id = uuid.uuid4().hex
+
+    @app.before_request
+    def parse_json_payload():
+        if request.is_json:
+            try:
+                g.json_payload = request.get_json()
+            except Exception:
+                g.json_payload = None
 
     @app.after_request
     def log_request(response):
