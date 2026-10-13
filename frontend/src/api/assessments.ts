@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { Assessment, TremorRequest } from '../types/api';
+import type { Assessment } from '../types/api';
 
 export const assessmentsApi = {
   async create(): Promise<Assessment> {
@@ -30,6 +30,31 @@ export const assessmentsApi = {
     return apiClient.post<Assessment>(`/api/assessments/${id}/tremor`, { outcome, error });
   },
 
+  async predictTremor(id: number, features: Record<string, number>): Promise<{ outcome: any }> {
+    return apiClient.post<{ outcome: any }>(`/api/assessments/${id}/tremor/predict`, features);
+  },
+
+  async predictSpiral(id: number, trajectory: any[], inputMode: string = 'canvas_drawing'): Promise<{ outcome: any }> {
+    return apiClient.post<{ outcome: any }>(`/api/assessments/${id}/spiral/predict`, { trajectory, input_mode: inputMode });
+  },
+
+  async predictSpeech(id: number, metadata: Record<string, any> = {}): Promise<any> {
+    return apiClient.post(`/api/assessments/${id}/speech/predict`, metadata);
+  },
+
+  async downloadReportPdf(id: number): Promise<Blob> {
+    const token = apiClient.getToken();
+    const response = await fetch(`/api/assessments/${id}/report.pdf`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to download report PDF');
+    }
+    return response.blob();
+  },
+
   async listHistory(limit: number = 50): Promise<{ assessments: Assessment[] }> {
     return apiClient.get<{ assessments: Assessment[] }>(`/api/history/assessments?limit=${limit}`);
   },
@@ -38,3 +63,4 @@ export const assessmentsApi = {
     return apiClient.get<{ assessments: Assessment[] }>(`/api/history/completed?limit=${limit}`);
   },
 };
+

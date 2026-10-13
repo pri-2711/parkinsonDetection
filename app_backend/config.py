@@ -5,8 +5,30 @@ import tempfile
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+def load_repository_environment() -> None:
+    """Load root .env values, including when a blank process variable masks one."""
+    try:
+        from dotenv import dotenv_values, load_dotenv
+    except ImportError:
+        return
+
+    env_path = REPOSITORY_ROOT / ".env"
+    load_dotenv(dotenv_path=env_path)
+    # load_dotenv intentionally preserves existing variables. A blank Windows
+    # process variable is not a usable override and must not hide the local key.
+    for name, value in dotenv_values(env_path).items():
+        if value is not None and not os.getenv(name, "").strip():
+            os.environ[name] = value
+
+
+load_repository_environment()
+
 DEFAULT_EXPERIMENT_ARTIFACTS = (
     REPOSITORY_ROOT / "experiments" / "regularized_svm_rf" / "results" / "artifacts"
+)
+DEFAULT_FUSION_WEIGHTS = (
+    REPOSITORY_ROOT / "experiments" / "regularized_svm_rf" / "results" / "fusion_validation_weights.json"
 )
 
 
@@ -34,6 +56,9 @@ class BackendConfig:
     MODEL_ARTIFACT_DIR = os.getenv("MODEL_ARTIFACT_DIR", str(DEFAULT_EXPERIMENT_ARTIFACTS))
     SPEECH_MODEL_FILE = os.getenv("SPEECH_MODEL_FILE", "speech_svm_tuned.joblib")
     HANDWRITING_MODEL_FILE = os.getenv("HANDWRITING_MODEL_FILE", "handwriting_svm_tuned.joblib")
+    TREMOR_MODEL_FILE = os.getenv("TREMOR_MODEL_FILE", "tremor_svm_tuned.joblib")
+    FUSION_WEIGHTS_FILE = os.getenv("FUSION_WEIGHTS_FILE", str(DEFAULT_FUSION_WEIGHTS))
+    DATABASE_PATH = os.getenv("DATABASE_PATH", str(REPOSITORY_ROOT / "data" / "parkinson_app.db"))
     SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", 3600))
     TREMOR_ALLOWED_LOCATIONS = _allowed_locations()
     TREMOR_MAX_INTENSITY = float(os.getenv("TREMOR_MAX_INTENSITY", 10.0))

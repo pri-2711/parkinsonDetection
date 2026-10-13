@@ -1,9 +1,11 @@
 import os
 
+from app_backend.config import REPOSITORY_ROOT
+
 try:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv(dotenv_path=REPOSITORY_ROOT / ".env")
 except ImportError:
     pass
 

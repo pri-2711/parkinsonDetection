@@ -5,7 +5,7 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INPUT = ROOT / "raw_dataset" / "telemonitoring" / "parkinsons_updrs.data"
+INPUT = ROOT / "raw_dataset" / "UPDRS" / "telemonitoring" / "parkinsons_updrs.data"
 OUTPUT = ROOT / "cleaned_dataset" / "telemonitoring_clean.csv"
 
 

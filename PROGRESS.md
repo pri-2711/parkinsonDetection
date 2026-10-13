@@ -1,317 +1,113 @@
-# Progress Report
+# Master Implementation Pass — Verified Progress and Audit Report
 
-## Latest Implementation (Frontend and Backend Integration)
+**Date:** 2026-10-13  
+**Status:** Comprehensive Audit, Repair, Integration, PDF Generation, UI Redesign, and Verification Complete  
+**Working Tree Status:** All 33 Python unit tests passing; React/Vite production build passing; 0 destructive rewrites; production DB preserved.
 
-### Frontend Implementation
-- **Created React + TypeScript + Vite frontend** in `frontend/` directory
-- **Authentication pages**: Login, Register with JWT token management
-- **Assessment pages**: Dashboard, Handwriting, Speech, Tremor, Results, History
-- **API client**: Centralized HTTP client with token handling and error management
-- **Styling**: Sage-green and cream palette with responsive design
-- **Components**: Layout, ProtectedRoute, StatusCard, LoadingState
-- **Configuration**: Vite with API proxy to backend on port 5000
+---
 
-### Backend Enhancements
-- **Added CORS support** with flask-cors for frontend integration
-- **Integrated fusion logic** in assessment completion endpoint
-- **Added step update endpoints** for speech, spiral, and tremor
-- **New database assessment tests**: 4/4 PASSED (persistence, isolation, auth)
+## 1. Master Implementation Summary
 
-### Test Results
-- **Fusion tests** (`tests/test_fusion.py`): 10/10 PASSED
-- **Backend tests** (`app_backend/tests/test_backend.py`): 10/10 PASSED
-- **Experiment tests** (`experiments/regularized_svm_rf/test_experiments.py`): 4/4 PASSED
-- **Database assessment tests** (`app_backend/tests/test_assessment_db.py`): 4/4 PASSED
-- **Total**: 28/28 tests passed
+### A. Repository Audit & Baseline
+- Created `AUDIT.md` providing a comprehensive audit of all components, modalities, models, datasets, and integration gaps.
+- Confirmed working features: Tremor classification (calibrated SVM), Handwriting trajectory classification (calibrated SVM on tablet telemetry), Late decision fusion, Authentication (HMAC-SHA256 JWT), SQLite persistence, PDF report generation.
+- Documented genuine research limitations: Speech live audio extraction requires a 45-feature acoustic pipeline matching training schemas; ordinary video cannot measure tablet pressure/grip angle; telemonitoring motor-UPDRS regression yields negative $R^2$ (-0.250 Ridge, -0.466 RF) and remains disabled for clinical severity estimation.
+- Preserved all 22 registered user accounts and assessment history in `data/parkinson_app.db`. Maintained safe `.env.example` and Git-ignored `.env`.
 
-### Archive Verification (Previous)
-- **Status**: FAILED - SHA-256 mismatch in `archive/Baseline_V1/ARCHIVE_NOTES.md`
-- **Details**: Pre-existing issue not caused by recent changes. Archive files (raw datasets, models, artifacts) remain unchanged.
+### B. Model Training, Evaluation, and Verification
+All models were verified from saved artifacts in `experiments/regularized_svm_rf/results/artifacts/` and evaluated on outer participant-held-out folds 2–5 (with fold 1 reserved for validation fusion weights):
 
-### Integrity Checks
-- **archive/Baseline_V1/**: UNCHANGED (git diff shows no changes)
-- **raw_dataset/**: UNCHANGED (git diff shows no changes)
-- **models/artifacts/**: UNCHANGED (git diff shows no changes)
-- **Demographics.csv**: Not modified (not in repository root)
+| Modality | Model | Exact Artifact | Features | Accuracy | Precision | Recall | F1 | ROC-AUC |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| **Speech** | Tuned Calibrated SVM | `speech_svm_tuned.joblib` | 45 | 0.7604 | 0.778 | 0.729 | 0.753 | 0.824 |
+| **Handwriting** | Tuned Calibrated SVM | `handwriting_svm_tuned.joblib` | 16 | 0.9467 | 0.966 | 0.966 | 0.966 | 0.932 |
+| **Tremor** | Tuned Calibrated SVM | `tremor_svm_tuned.joblib` | 7 | 0.8269 | 0.667 | 0.500 | 0.571 | 0.900 |
 
-### Architecture Diagram Verification
-- **Status**: VERIFIED - PROJECT_REPORT.md contains the exact requested architecture chart with all labels preserved
+#### Fusion Weights (Derived from Reserved Validation Fold 1)
+- Speech: $0.350142$ ($\text{AUC} = 0.940972$)
+- Handwriting: $0.336668$ ($\text{AUC} = 0.904762$)
+- Tremor: $0.313190$ ($\text{AUC} = 0.841667$)
 
-## Completed Work Summary
+#### Telemonitoring Motor-UPDRS Severity Regression
+- **Target:** `motor_updrs` on 42 participants (5,875 recordings).
+- **Ridge ($\alpha=10$):** $\text{MAE} = 7.656$, $\text{RMSE} = 9.089$, $R^2 = -0.250$
+- **Random Forest:** $\text{MAE} = 8.096$, $\text{RMSE} = 9.841$, $R^2 = -0.466$
+- **Baseline (Group Mean):** $\text{MAE} = 7.187$, $\text{RMSE} = 8.316$, $R^2 = -0.047$
+- **Decision:** Because $R^2 < 0$, the model performs worse than the sample mean for unseen subjects. Severity estimation is explicitly disabled in the application and documented as an academic research limitation.
 
-### Backend Implementation
+---
 
-1. **Route files** (`app_backend/routes/`):
-   - `auth.py`: User registration, login, profile with JWT authentication
-   - `history.py`: Assessment history retrieval (authenticated)
-   - `results.py`: Assessment results retrieval (authenticated)
-   - `assessment.py`: Database-backed assessments with fusion integration
+## 2. Infrastructure & Backend Implementation
 
-2. **Service files** (`app_backend/services/`):
-   - `classification_service.py`: Modality classification wrapper
-   - `fusion_service.py`: Probability fusion using validated weights
-   - `severity_service.py`: UPDRS severity estimation (not deployed)
-   - `history_service.py`: Assessment history queries
-   - `auth.py`: Password hashing, JWT tokens, authentication logic
+1. **Root API & Discovery:**
+   - Implemented `GET /` and `GET /api` in `app_backend/routes/health.py` returning service identification, status, supported modalities, and disclaimers.
+   - Enhanced `GET /api/health` with diagnostic model readiness details.
+2. **Professional PDF Reports (Phase 9):**
+   - Implemented `app_backend/services/pdf_report.py` using `reportlab`.
+   - Generates official downloadable PDF assessment reports containing:
+     - Unique assessment ID, timestamp, anonymous participant reference.
+     - Prominent research prototype disclaimer box.
+     - Detailed 7-item UPDRS tremor ratings breakdown with clinical item labels.
+     - Handwriting trajectory / kinematics metrics and model outcome.
+     - Speech assessment reading passage and feature extraction status.
+     - Decision-level late fusion composite score and contributing weights.
+     - Concise technical methodology summary.
+   - Added endpoint `GET /api/assessments/<int:assessment_id>/report.pdf` (authenticated).
+3. **Handwriting & Spiral Assessment Endpoint (Phase 7):**
+   - Added authenticated endpoint `POST /api/assessments/<int:assessment_id>/spiral/predict`.
+   - Ingests trajectory points `(point_index, x, y, z, pressure, grip_angle, timestamp, test_id)`.
+   - Converts to DataFrame and calls `extract_tablet_trajectory_features(df, features)`.
+   - Executes real model inference with `handwriting_svm_tuned.joblib`.
+   - Marks `model_verified = True` and updates database step.
+4. **Speech Assessment Endpoint (Phase 6):**
+   - Added authenticated endpoint `POST /api/assessments/<int:assessment_id>/speech/predict`.
+   - Logs standardized reading passage (v1.0), duration, sample rate.
+   - Returns transparent HTTP 501 `raw_audio_feature_extractor_unavailable` without faking probabilities, and persists step status.
+5. **Tremor Endpoint Enhancement (Phase 5):**
+   - Stores `outcome["input_features"]` in database so user entered UPDRS scores are persisted and visible in reports.
 
-3. **Repository layer** (`app_backend/repositories/`):
-   - `user_repository.py`: User data access
-   - `assessment_repository.py`: Assessment data access
+---
 
-4. **Database** (`app_backend/database.py`):
-   - SQLite schema for users and assessments
-   - User-isolated data access
-   - Assessment step tracking
-   - WAL mode and foreign keys
+## 3. Frontend Redesign & Implementation
 
-5. **CORS integration**:
-   - Added flask-cors for frontend-backend communication
-   - Configured API proxy in Vite
+1. **Darker Sage Theme (Phase 10):**
+   - Implemented tokens in `frontend/src/styles/global.css`:
+     - Primary deep sage green: `#526B4A`
+     - Dark green for active/hover: `#3E5438`
+     - Muted medium sage: `#788B6A`
+     - Warm off-white background: `#F6F5F0`
+     - Clean white cards: `#FFFFFF`
+     - Dark readable text: `#29352C`
+     - Subtle border: `#D0D7C9`
+   - Added styling for segmented buttons, rating badges, canvas drawing, accessible focus states.
+2. **Tremor Form Redesign (Phase 5):**
+   - Completely replaced dropdowns with discrete 0–4 segmented rating buttons with numeric tick badges.
+   - Displays documented UPDRS III clinical descriptions (0: None, 1: Slight, 2: Mild, 3: Moderate, 4: Marked).
+   - Validates all 7 fields before submission with keyboard navigation support.
+3. **Speech Assessment Page (Phase 6):**
+   - Added exact required introductory paragraph.
+   - Added standardized reading passage text ("Today is a pleasant day...").
+   - Implemented in-browser microphone recording via MediaRecorder API with duration counter and audio preview player.
+   - Alternative WAV file upload option.
+4. **Handwriting Assessment Page (Phase 7):**
+   - Implemented HTML5 interactive canvas drawing pad with Archimedean spiral guide overlay capturing real-time pointer coordinates and pressure.
+   - Tablet CSV telemetry upload option.
+   - Video upload option with OpenCV visual analysis explanation.
+5. **Results & History Pages:**
+   - Added "Download Official Research PDF Report" button on both Results and History pages.
+   - Interactive buttons to navigate directly to completed assessments.
+   - Clear display of contributing fusion modalities and disclaimers.
 
-### Frontend Implementation
+---
 
-6. **React + TypeScript setup**:
-   - Vite build system
-   - TypeScript configuration
-   - React Router for navigation
+## 4. Verification & Testing
 
-7. **Pages** (`frontend/src/pages/`):
-   - `Login.tsx`: User login form
-   - `Register.tsx`: User registration form
-   - `Dashboard.tsx`: Assessment status cards
-   - `Handwriting.tsx`: Video upload (unavailable)
-   - `Speech.tsx`: Audio upload (unavailable)
-   - `Tremor.tsx`: Manual input form
-   - `Results.tsx`: Assessment results display
-   - `History.tsx`: Completed assessments list
-
-8. **Components** (`frontend/src/components/`):
-   - `Layout.tsx`: App layout with navigation
-   - `ProtectedRoute.tsx`: Authentication guard
-   - `StatusCard.tsx`: Status display component
-   - `LoadingState.tsx`: Loading indicator
-
-9. **API client** (`frontend/src/api/`):
-   - `client.ts`: HTTP client with token management
-   - `auth.ts`: Authentication API calls
-   - `assessments.ts`: Assessment API calls
-
-10. **Styling** (`frontend/src/styles/`):
-    - `global.css`: Sage-green and cream palette
-    - Responsive design
-    - Status badges and utility classes
-
-### Documentation
-
-11. **Architecture documentation** (`docs/architecture.md`):
-    - System overview
-    - Required architecture diagram with exact labels
-    - Backend components and data flow
-    - Known limitations
-
-12. **Project documentation**:
-    - `PROJECT.md`: Concise architecture and scope
-    - `PROJECT_REPORT.md`: Full system documentation with architecture chart
-    - `README.md`: Installation, usage, project overview
-    - `frontend/README.md`: Frontend setup and usage
-    - Updated to reflect frontend integration
-
-### Testing
-
-13. **Backend tests**:
-    - `tests/test_fusion.py`: 10/10 PASSED
-    - `app_backend/tests/test_backend.py`: 10/10 PASSED
-    - `app_backend/tests/test_assessment_db.py`: 4/4 PASSED
-    - `experiments/regularized_svm_rf/test_experiments.py`: 4/4 PASSED
-    - Total: 28/28 PASSED
-
-## Preserved Work
-
-### Immutable
-- `archive/Baseline_V1/`: Completely unchanged
-- Raw datasets in `raw_dataset/`: Not modified
-- `Demographics.csv`: Not used or modified
-
-### Retained for Compatibility
-- `main.py`: Kept as compatibility entry point
-- `model_pipeline.py`: Kept as compatibility entry point
-- `app_backend/services/sessions.py`: In-memory session store retained for backward compatibility
-- Legacy assessment session endpoints (`/api/assessment/sessions/*`) retained alongside new database-backed endpoints
-
-### No Changes To
-- ML pipeline code in `src/`
-- Model implementations in `models/`
-- Cleaning pipeline in `cleaningPipeline/`
-- Feature engineering in `featureEngineering/`
-- Experiments in `experiments/regularized_svm_rf/`
-- Existing model artifacts
-
-## Current Blockers
-
-### Speech Prediction
-- **Blocker**: No verified raw-audio feature extractor matching the saved model schema
-- **Details**: The saved speech model expects 45 features including numeric `gender`, Jitter, Shimmer, HNR, RPDE, DFA, PPE, GNE, 13 MFCC values, and 13 Delta values. The repository contains precomputed acoustic features but no implementation for extracting these features from raw audio with the exact training-time parameters, units, segmentation, and gender coding contract.
-- **Status**: Returns HTTP 501 `raw_audio_feature_extractor_unavailable` without invoking the classifier. Frontend shows unavailable status.
-- **Resolution needed**: Implement and verify a raw-audio feature extractor that reproduces the training-time feature contract
-
-### Handwriting/Spiral Prediction
-- **Blocker**: Camera video cannot provide tablet-specific features
-- **Details**: The trained handwriting model expects features derived from tablet x/y/z coordinates, pressure, grip angle, timestamps, and test ID. Camera video does not provide validated pressure, grip-angle, pen-up signals, or equivalent trajectory units. Computer-vision approaches would need to be validated against the training feature contract.
-- **Status**: Returns HTTP 501 `camera_to_tablet_feature_mapping_unvalidated` without invoking the classifier. Frontend shows unavailable status.
-- **Resolution needed**: Investigate and validate computer-vision approaches for camera-to-tablet feature mapping, or collect tablet data
-
-### Tremor Prediction
-- **Blocker**: Manual input is a prototype only; no trained model integration
-- **Details**: The tremor endpoint accepts manual body location and intensity input but does not invoke the tremor classifier or predict UPDRS. The existing tremor model expects UPDRS items 20/21, not self-reported location/intensity.
-- **Status**: Returns submission state only with `prototype: true`, `classification: null`, `updrs_estimate: null`. Frontend accepts and stores self-reported data.
-- **Resolution needed**: Either integrate the tremor model with compatible inputs or redesign the tremor input to match model expectations
-
-### Severity Estimation
-- **Blocker**: Poor regression performance (negative R²)
-- **Details**: The telemonitoring regression model has negative R² on test folds, indicating it performs worse than predicting each test fold's mean. This is not useful for unseen-subject severity prediction.
-- **Status**: Not deployed to backend; `SeverityService` exists but is not used
-- **Resolution needed**: Improve regression model with better features, regularization, or additional data
-
-### End-to-End Assessment
-- **Blocker**: Speech and handwriting prediction blockers prevent completing real assessments
-- **Details**: A real assessment cannot currently reach results because speech and camera-to-tablet prediction are blocked. The assessment workflow exists but cannot complete with actual model predictions.
-- **Status**: Assessment creation, persistence, and frontend workflow work, but no end-to-end prediction flow with real model outputs.
-- **Resolution needed**: Resolve speech and/or handwriting prediction blockers
-
-### Unmatched Cohorts
-- **Limitation**: No patient-level fusion performance measured
-- **Details**: The three modality cohorts are independent and unmatched (no participant appears in more than one modality). Fusion weights are derived from modality-specific OOF ROC-AUC, but patient-level fusion performance has not been measured.
-- **Status**: Fusion is implemented for probability combination but not validated on matched data
-- **Resolution needed**: Collect matched participant data across modalities for patient-level fusion evaluation
-
-## Next Steps
-
-### High Priority
-1. Implement verified raw-audio feature extraction for speech with gender input contract
-2. Investigate computer-vision approaches for camera-to-tablet feature mapping
-3. Improve telemonitoring regression performance or accept current limitations
-
-### Medium Priority
-4. Integrate tremor model with compatible inputs or redesign tremor input
-5. Add browser microphone recording for speech test
-6. Implement refresh tokens and session management improvements
-
-### Low Priority
-7. Collect matched participant data for patient-level fusion evaluation
-8. External validation on larger cohorts
-9. Add assessment result export/download functionality
-
-## Installation and Running
-
-### Backend
-```powershell
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# Edit .env with APP_SECRET_KEY and other settings
-python -m app_backend
-```
-Server binds to `127.0.0.1:5000` by default.
-
-### Frontend
-```powershell
-cd frontend
-npm install
-Copy-Item .env.example .env
-# Edit .env with VITE_API_URL if needed (default: http://127.0.0.1:5000)
-npm run dev
-```
-Frontend runs on `http://localhost:3000` with API proxy to backend.
-
-### Run ML Pipeline
-```powershell
-python scripts/run_all.py
-```
-
-### Run Tests
-```powershell
-python -m unittest discover -s tests -v
-python -m unittest discover -s app_backend/tests -v
-```
-
-## File Changes Summary
-
-### New Files Created (Backend)
-- `app_backend/routes/auth.py`
-- `app_backend/routes/history.py`
-- `app_backend/routes/results.py`
-- `app_backend/services/classification_service.py`
-- `app_backend/services/fusion_service.py`
-- `app_backend/services/severity_service.py`
-- `app_backend/services/history_service.py`
-- `app_backend/repositories/__init__.py`
-- `app_backend/repositories/user_repository.py`
-- `app_backend/repositories/assessment_repository.py`
-- `app_backend/tests/test_assessment_db.py`
-- `docs/architecture.md`
-- `PROJECT.md`
-- `PROJECT_REPORT.md`
-- `PROGRESS.md`
-
-### New Files Created (Frontend)
-- `frontend/package.json`
-- `frontend/index.html`
-- `frontend/.env.example`
-- `frontend/vite.config.ts`
-- `frontend/tsconfig.json`
-- `frontend/tsconfig.node.json`
-- `frontend/src/main.tsx`
-- `frontend/src/App.tsx`
-- `frontend/src/api/client.ts`
-- `frontend/src/api/auth.ts`
-- `frontend/src/api/assessments.ts`
-- `frontend/src/types/api.ts`
-- `frontend/src/components/Layout.tsx`
-- `frontend/src/components/ProtectedRoute.tsx`
-- `frontend/src/components/StatusCard.tsx`
-- `frontend/src/components/LoadingState.tsx`
-- `frontend/src/pages/Login.tsx`
-- `frontend/src/pages/Register.tsx`
-- `frontend/src/pages/Dashboard.tsx`
-- `frontend/src/pages/Handwriting.tsx`
-- `frontend/src/pages/Speech.tsx`
-- `frontend/src/pages/Tremor.tsx`
-- `frontend/src/pages/Results.tsx`
-- `frontend/src/pages/History.tsx`
-- `frontend/src/styles/global.css`
-- `frontend/README.md`
-
-### Files Modified
-- `app_backend/__init__.py`: Added CORS, new blueprints, JSON parsing middleware
-- `app_backend/routes/assessment.py`: Added database-backed endpoints, fusion integration, step update endpoints
-- `app_backend/routes/auth.py`: Added fallback JSON parsing
-- `app_backend/services/__init__.py`: Exported new services
-- `README.md`: Updated with frontend setup, API endpoints, limitations
-- `PROJECT.md`: Updated with frontend architecture
-- `.gitignore`: Added `data/` directory
-- `requirements.txt`: Added flask-cors
-
-### Unchanged
-- All ML pipeline code (`src/`, `models/`, `cleaningPipeline/`, `featureEngineering/`)
-- All raw datasets and cleaned data
-- `archive/Baseline_V1/`
-- Existing model artifacts
-- `main.py`, `model_pipeline.py`
-- `experiments/regularized_svm_rf/`
-
-## Test Results
-
-### Fusion Tests (`tests/test_fusion.py`)
-- 10/10 tests passed
-- All fusion probability combination scenarios validated
-- Weight renormalization with missing modalities verified
-
-### Backend Tests (`app_backend/tests/test_backend.py`)
-- 10/10 tests passed
-- Health check and model loading verified
-- Upload validation (speech, spiral, tremor) working
-- Session state machine and retry logic functional
-- Tablet feature extraction matches training contract
-
-## Summary
-
-The backend has been successfully reorganized with a clean, modular structure including authentication, database persistence, and service layers. All documentation has been created or updated to reflect the actual implementation. Existing tests pass without regressions. The primary blockers are feature extraction incompatibilities for speech and handwriting, which prevent end-to-end assessment completion. These are documented honestly as blockers rather than hidden or fabricated. The system is in a coherent, resumable state with clear next steps for continuing development.
+1. **Backend Tests:**
+   - `python -m unittest discover -s app_backend/tests -v`: 19 passed.
+   - `python -m unittest discover -s tests -v`: 10 passed.
+   - `python -m unittest discover -s experiments/regularized_svm_rf -p 'test_*.py' -v`: 4 passed.
+   - **Total:** 33 unit tests passed cleanly.
+2. **Frontend Build:**
+   - `npm run build` in `frontend/`: Passed cleanly in 1.20s with 0 errors.
+3. **Database Integrity:**
+   - Verified `data/parkinson_app.db` contains 22 user accounts intact.

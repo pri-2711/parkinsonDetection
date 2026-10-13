@@ -2,7 +2,7 @@
 
 ## Saved artifacts
 
-The backend loads `experiments/regularized_svm_rf/results/artifacts/speech_svm_tuned.joblib` and `handwriting_svm_tuned.joblib`. Both contain an sklearn `CalibratedClassifierCV` wrapping a fitted pipeline, including median imputation, fitted RBF SVC, and sigmoid calibration; speech also includes its fitted `StandardScaler`. Both have class order `[0, 1]` and calibrated probability output. The adapter checks the exact saved feature order and performs no fitting. Baseline V1 is unchanged.
+The backend loads the saved speech, handwriting, and tremor classifiers from `experiments/regularized_svm_rf/results/artifacts/`. The bundles contain fitted sklearn pipelines, preprocessing, calibrated probabilities, and feature schemas. The adapter checks exact feature order and class order `[0, 1]`, and performs no fitting. Baseline V1 is unchanged.
 
 ## Speech
 
@@ -18,7 +18,7 @@ The cleaning code reads tablet trajectories with x/y/z, pressure, grip angle, ti
 
 ## Tremor and sessions
 
-Manual tremor input is a configurable `location` and 0–10 perceived intensity prototype. It returns submission state only; it never calls the tremor classifier or predicts UPDRS. Sessions are process-local with a one-hour default TTL and enforce speech → spiral → tremor. Failed steps are recorded and retryable; results are hidden until every step has succeeded.
+The legacy manual `location` and 0–10 intensity endpoint remains a prototype and returns no prediction. Authenticated assessments can classify the exact seven UPDRS III item 20/21 features in the saved tremor model schema. Inputs are validated as integer ratings 0–4; the output is a research probability, not a diagnosis or severity estimate. Sessions are process-local with a one-hour default TTL and enforce speech → spiral → tremor. Failed steps are recorded and retryable; results are hidden until every step has succeeded.
 
 ## Functional status
 
@@ -28,6 +28,7 @@ Manual tremor input is a configurable `location` and 0–10 perceived intensity 
 | `GET /api/spiral/status` | Functional: reports model readiness and camera mapping blocker. |
 | `POST /api/speech/predict` | WAV validation functional; classification blocked by missing verified raw-audio extraction and gender input contract. |
 | `POST /api/spiral/predict` | Image/video validation functional; classification blocked by camera/tablet feature incompatibility. |
+| `POST /api/assessments/<id>/tremor/predict` | Authenticated classification from exact seven trained UPDRS III item ratings; persists probability in assessment. |
 | `POST /api/tremor/submit` | Functional as a manual prototype only; no classification or regression. |
 | Assessment session routes | State machine/order enforcement functional; a real session cannot complete until speech and spiral prediction are supported. |
 

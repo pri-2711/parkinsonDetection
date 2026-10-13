@@ -47,24 +47,25 @@ Research prototype for Parkinson's disease classification from speech, handwriti
 - Ridge and Random Forest compared against group-mean baseline
 - Current R² is negative, indicating poor generalization to unseen subjects
 
-## Current Scope
-
 ### Functional
 - ML pipeline with reproducible training and evaluation
-- Fusion configuration from OOF modality performance
-- Backend health checks and model loading
-- User registration and authentication
-- Assessment creation, updates, and completion
-- Upload validation for audio and video
-- Frontend authentication and navigation
-- Frontend assessment workflow with status tracking
+- Fusion configuration from reserved validation-fold modality performance
+- Backend health checks, root discovery routes, and model loading
+- User registration, login, and token-based authentication
+- Assessment creation, updates, completion, and decision-level late fusion
+- Tremor classifier inference from 7 UPDRS III items (0–4) with accessible segmented selectors
+- Handwriting classifier inference from canvas drawing and tablet CSV telemetry
+- Upload validation for audio and video with transparent 501 diagnostic responses
+- ReportLab-based PDF research report generation and download
+- Frontend authentication, dashboard, results, and longitudinal history
+- Cohesive darker sage visual design (`#526B4A`, `#3E5438`, `#788B6A`, `#F6F5F0`, `#FFFFFF`, `#29352C`)
 
 ### Blocked/Prototype
 - **Speech prediction**: Raw audio feature extraction not implemented; model expects precomputed features
 - **Handwriting prediction**: Camera video cannot provide tablet pressure/grip-angle features
-- **Tremor prediction**: Manual input only; no model integration
+- **Tremor prediction**: Integrated from the seven clinician-rated UPDRS III item 20/21 inputs required by the saved classifier; probability is not a diagnosis
 - **Severity estimation**: Regression model has negative R², not deployed to backend
-- **End-to-end assessment**: Cannot complete due to speech and handwriting blockers
+- **Assessment completion**: Tremor-only completion is supported when compatible UPDRS ratings are available; speech and handwriting remain unavailable and are excluded from fusion
 
 ## Modules
 
@@ -84,8 +85,7 @@ Research prototype for Parkinson's disease classification from speech, handwriti
 
 ```powershell
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# Edit .env with APP_SECRET_KEY and other settings
+python -c "import secrets; from pathlib import Path; p=Path('.env'); p.exists() or p.write_text('HOST=127.0.0.1\\nPORT=5000\\nAPP_SECRET_KEY='+secrets.token_urlsafe(48)+'\\nLOG_LEVEL=INFO\\n', encoding='utf-8')"
 python -m app_backend
 ```
 
@@ -93,7 +93,7 @@ python -m app_backend
 
 ```powershell
 cd frontend
-npm install
+npm ci
 Copy-Item .env.example .env
 # Edit .env with VITE_API_URL if needed (default: http://127.0.0.1:5000)
 npm run dev

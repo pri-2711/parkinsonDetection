@@ -111,9 +111,9 @@ def login_required(f):
         if not auth_header.startswith("Bearer "):
             raise APIError(401, "missing_token", "Include an Authorization: Bearer <token> header.")
         token = auth_header[7:].strip()
-        secret = current_app.config.get("SECRET_KEY") or ""
-        if not secret:
-            raise APIError(500, "server_misconfigured", "Server secret key is not configured.")
+        secret = current_app.config.get("SECRET_KEY")
+        if not isinstance(secret, str) or not secret.strip():
+            raise APIError(500, "server_misconfigured", "Authentication signing key is not configured. Set APP_SECRET_KEY in the repository-root .env file.")
         payload = decode_token(token, secret)
         user_id = payload.get("sub")
         if not isinstance(user_id, int):

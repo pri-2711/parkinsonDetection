@@ -1,4 +1,11 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+const API_URL = import.meta.env.VITE_API_URL !== undefined
+  ? import.meta.env.VITE_API_URL
+  : (typeof window !== 'undefined' && window.location.port === '3000' ? '' : 'http://127.0.0.1:5000');
+
+export interface ApiError extends Error {
+  code?: string;
+  status?: number;
+}
 
 class ApiClient {
   private token: string | null = null;
@@ -9,7 +16,7 @@ class ApiClient {
   }
 
   getToken(): string | null {
-    if (!this.token) {
+    if (!this.token && typeof localStorage !== 'undefined') {
       this.token = localStorage.getItem('auth_token');
     }
     return this.token;
@@ -17,30 +24,48 @@ class ApiClient {
 
   clearToken() {
     this.token = null;
-    localStorage.removeItem('auth_token');
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('auth_token');
+    }
   }
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
-
-    if (this.getToken()) {
-      headers['Authorization'] = `Bearer ${this.getToken()}`;
+    const headers = new Headers(options.headers);
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    const token = this.getToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (fetchErr) {
+      const err = new Error(
+        'Unable to connect to the backend server. Please ensure the Flask API is running on http://127.0.0.1:5000.'
+      ) as ApiError;
+      err.code = 'network_error';
+      throw err;
+    }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: 'Request failed' } }));
-      throw new Error(error.error?.message || 'Request failed');
+      const errorData = await response.json().catch(() => ({
+        error: { message: `Request failed with HTTP status ${response.status}`, code: `http_${response.status}` },
+      }));
+      const errorMsg = errorData.error?.message || `Request failed with HTTP status ${response.status}`;
+      const err = new Error(errorMsg) as ApiError;
+      err.code = errorData.error?.code;
+      err.status = response.status;
+      throw err;
     }
 
     return response.json();

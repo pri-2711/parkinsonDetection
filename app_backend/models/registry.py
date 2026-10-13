@@ -30,6 +30,7 @@ class ModelRegistry:
             {
                 "speech": config["SPEECH_MODEL_FILE"],
                 "handwriting": config["HANDWRITING_MODEL_FILE"],
+                "tremor": config["TREMOR_MODEL_FILE"],
             },
         )
 
@@ -48,4 +49,6 @@ class ModelRegistry:
         result["speech"]["gender_metadata_required_by_model"] = "gender is an input feature in the trained schema"
         result["handwriting"]["prediction_available"] = False
         result["handwriting"]["blocker"] = "camera_to_tablet_feature_mapping_unvalidated"
+        result["tremor"]["prediction_available"] = result["tremor"]["model_loaded"]
+        result["tremor"]["input_contract"] = "seven UPDRS III items 20/21 ratings, each 0-4"
         return result

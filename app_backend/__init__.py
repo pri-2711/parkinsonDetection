@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 
 from flask import Flask, g, request
 from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from app_backend.config import BackendConfig
+from app_backend.config import BackendConfig, load_repository_environment
 from app_backend.errors import APIError, register_error_handlers
 from app_backend.logging_utils import configure_logging
 from app_backend.models.registry import ModelRegistry
@@ -17,10 +18,16 @@ from app_backend.services.sessions import AssessmentSessionStore
 
 
 def create_app(test_config: dict | None = None) -> Flask:
+    load_repository_environment()
     app = Flask(__name__)
     app.config.from_object(BackendConfig)
+    # BackendConfig is a class with import-time defaults; refresh auth settings
+    # so app creation always sees the current repository-root .env.
+    app.config["APP_SECRET_KEY"] = os.getenv("APP_SECRET_KEY")
+    app.config["SECRET_KEY"] = app.config.get("APP_SECRET_KEY")
     if test_config:
         app.config.update(test_config)
+    app.config["SECRET_KEY"] = app.config.get("APP_SECRET_KEY") or app.config.get("SECRET_KEY")
 
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 

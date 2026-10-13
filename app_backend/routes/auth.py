@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, g, jsonify
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app_backend.database import Database
 from app_backend.errors import APIError
@@ -11,13 +11,21 @@ auth_bp = Blueprint("auth", __name__)
 
 def _get_db() -> Database:
     if "db" not in current_app.extensions:
-        db = Database()
+        db = Database(current_app.config["DATABASE_PATH"])
         current_app.extensions["db"] = db
     return current_app.extensions["db"]
 
 
+def _require_secret() -> str:
+    secret = current_app.config.get("SECRET_KEY")
+    if not isinstance(secret, str) or not secret.strip():
+        raise APIError(500, "server_misconfigured", "Authentication signing key is not configured. Set APP_SECRET_KEY in the repository-root .env file.")
+    return secret
+
+
 @auth_bp.post("/api/auth/register")
 def register():
+    _require_secret()
     payload = g.get("json_payload")
     if payload is None:
         try:
@@ -38,9 +46,7 @@ def login():
         except Exception:
             raise APIError(400, "invalid_json", "Request body must be valid JSON.")
     db = _get_db()
-    secret = current_app.config.get("SECRET_KEY") or ""
-    if not secret:
-        raise APIError(500, "server_misconfigured", "Server secret key is not configured.")
+    secret = _require_secret()
     result = authenticate_user(db, payload, secret)
     return jsonify(result), 200
 

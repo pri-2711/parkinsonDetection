@@ -11,7 +11,7 @@ history_bp = Blueprint("history", __name__)
 
 def _get_db() -> Database:
     if "db" not in current_app.extensions:
-        db = Database()
+        db = Database(current_app.config["DATABASE_PATH"])
         current_app.extensions["db"] = db
     return current_app.extensions["db"]
 

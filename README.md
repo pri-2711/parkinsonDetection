@@ -12,7 +12,7 @@ This repository contains:
 4. **Model Artifacts**: Trained classifiers and regression models with documented limitations
 5. **Documentation**: Architecture, API reference, and feature compatibility status
 
-**Important**: The classification cohorts are independent and unmatched (no participant appears in more than one modality). No patient-level fusion performance has been measured. End-to-end assessment is currently blocked by missing feature extractors for speech and handwriting.
+**Important**: The classification cohorts are independent and unmatched (no participant appears in more than one modality). No patient-level fusion performance has been measured. A tremor-only assessment works from compatible clinician-rated UPDRS inputs; speech and handwriting remain blocked by incompatible available uploads.
 
 ## Installation
 
@@ -20,18 +20,20 @@ This repository contains:
 
 ```powershell
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# Edit .env with APP_SECRET_KEY and other settings
+python -c "import secrets; from pathlib import Path; p=Path('.env'); p.exists() or p.write_text('HOST=127.0.0.1\nPORT=5000\nAPP_SECRET_KEY='+secrets.token_urlsafe(48)+'\nLOG_LEVEL=INFO\n', encoding='utf-8')"
 ```
+
+The backend reads `APP_SECRET_KEY` from the repository-root `.env` when the Flask app is created. The generated `.env` is ignored by Git; do not share it. Existing accounts and password hashes stay in `data/parkinson_app.db`.
 
 ### Frontend Dependencies
 
 ```powershell
 cd frontend
-npm install
+npm ci
 Copy-Item .env.example .env
-# Edit .env with VITE_API_URL if needed (default: http://127.0.0.1:5000)
 ```
+
+`VITE_API_URL` defaults to `http://127.0.0.1:5000`; only change it when the backend runs elsewhere.
 
 ## Running the Application
 
@@ -50,7 +52,11 @@ cd frontend
 npm run dev
 ```
 
-Frontend runs on `http://localhost:3000` with API proxy to backend.
+Frontend runs on `http://127.0.0.1:3000`; the Vite proxy forwards `/api` requests to Flask on port 5000.
+
+Open the frontend and register a username, email, and password of at least eight characters, then log in. If you already have an account, use its existing credentials; setup does not reset account passwords.
+
+To test tremor classification, create an assessment from the dashboard, open Tremor, enter seven clinician-rated UPDRS III item 20/21 scores (0–4), and save. The resulting probability appears in results and history. It is a research output, not a diagnosis. Audio/video uploads remain unavailable because they cannot produce the trained feature schemas.
 
 ### Both Servers (recommended)
 
@@ -83,51 +89,35 @@ python experiments/regularized_svm_rf/run_experiments.py
 
 This tunes SVM and Random Forest separately for speech, handwriting, and tremor with subject-aware nested validation. It writes tuned artifacts to `experiments/regularized_svm_rf/results/artifacts/`. See the experiment directory for full commands, metrics, and limitations.
 
-## Backend API
+### Backend API
 
-### Authentication
+- `GET /` & `GET /api` - Root service status & modality discovery
+- `GET /api/health` - Health check and model readiness
 - `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - User login (returns JWT token)
+- `POST /api/auth/login` - User login (returns signed token)
 - `GET /api/auth/me` - Current user profile (authenticated)
-
-### Assessments
 - `POST /api/assessments` - Create assessment (authenticated)
-- `GET /api/assessments/<id>` - Get assessment (authenticated)
-- `POST /api/assessments/<id>/complete` - Complete assessment (authenticated)
-- `POST /api/assessments/<id>/speech` - Update speech step (authenticated)
-- `POST /api/assessments/<id>/spiral` - Update spiral step (authenticated)
-- `POST /api/assessments/<id>/tremor` - Update tremor step (authenticated)
-- `GET /api/assessments/<id>/results` - Get results (authenticated)
-
-### History
+- `GET /api/assessments/<id>` - Get assessment details (authenticated)
+- `POST /api/assessments/<id>/complete` - Complete assessment and compute late fusion (authenticated)
+- `GET /api/assessments/<id>/results` - Get assessment results (authenticated)
+- `POST /api/assessments/<id>/tremor/predict` - Tremor classification from 7 UPDRS III items (0–4)
+- `POST /api/assessments/<id>/spiral/predict` - Handwriting classification from canvas or tablet telemetry
+- `POST /api/assessments/<id>/speech/predict` - Speech reading passage recording and feature contract validation
+- `GET /api/assessments/<id>/report.pdf` - Download official PDF research assessment report (authenticated)
 - `GET /api/history/assessments` - List user assessments (authenticated)
 - `GET /api/history/completed` - List completed assessments (authenticated)
-- `GET /api/history/assessments/<id>` - Get specific assessment (authenticated)
 
-### Modality Endpoints
-- `GET /api/health` - Health check and model readiness
-- `POST /api/speech/predict` - Speech upload and prediction (blocked: no raw-audio extractor)
-- `POST /api/spiral/predict` - Spiral/handwriting upload and prediction (blocked: camera/tablet incompatibility)
-- `POST /api/tremor/submit` - Manual tremor input (prototype only)
+### Frontend Features
 
-### Legacy Sessions
-- `POST /api/assessment/sessions` - Create in-memory session (backward compatibility)
-- `GET /api/assessment/sessions/<id>` - Get in-memory session
-- `POST /api/assessment/sessions/<id>/complete` - Complete in-memory session
-- `GET /api/assessment/sessions/<id>/results` - Get in-memory session results
+- **Authentication**: Registration, login, logout with signed token management and password show/hide controls
+- **Dashboard**: Assessment status cards for tremor, handwriting, and speech tests with direct action buttons
+- **Tremor Assessment**: Redesigned accessible discrete 0–4 segmented rating buttons with documented UPDRS III clinical item descriptions
+- **Handwriting Test**: Real-time HTML5 interactive drawing canvas with Archimedean spiral guide overlay capturing coordinate telemetry, tablet CSV upload, and video visual inspection
+- **Speech Test**: Standardized reading passage (v1.0), in-browser microphone recording via MediaRecorder, WAV audio upload, and feature schema contract notice
+- **Results & Fusion**: Late fusion probability blending across available modalities with contributing weights
+- **PDF Reporting**: Professional ReportLab downloadable PDF reports containing clinical ratings, kinematic metrics, methodology, and research disclaimers
+- **Visual Design**: Cohesive darker sage green palette (`#526B4A`, `#3E5438`, `#788B6A`, `#F6F5F0`, `#FFFFFF`, `#29352C`) with responsive cards and accessible controls
 
-See [API documentation](app_backend/API.md) and [feature compatibility status](app_backend/FEATURE_COMPATIBILITY.md) for details.
-
-## Frontend Features
-
-- **Authentication**: Registration, login, logout with JWT token management
-- **Dashboard**: Assessment status cards for handwriting, speech, and tremor tests
-- **Handwriting Test**: Video upload (unavailable due to camera/tablet incompatibility)
-- **Speech Test**: Audio upload (unavailable due to missing raw-audio extractor)
-- **Tremor Assessment**: Body location and perceived intensity input (self-reported only)
-- **Results**: Modality status, fused classification when available, completion workflow
-- **History**: Completed assessments with modality status and fused results
-- **Design**: Sage-green and cream palette, responsive layout, accessible controls
 
 ## Current Status
 
@@ -142,9 +132,9 @@ See [API documentation](app_backend/API.md) and [feature compatibility status](a
 ### Blocked/Prototype
 - **Speech prediction**: No verified raw-audio feature extractor matching the saved model schema
 - **Handwriting prediction**: Camera video cannot provide tablet pressure/grip-angle features
-- **Tremor prediction**: Manual input only; no model integration
+- **Tremor prediction**: Works from the seven clinician-rated UPDRS item inputs used in training; it does not infer ratings from self-report or video
 - **Severity estimation**: Not deployed due to poor regression performance (negative R²)
-- **End-to-end assessment**: Cannot complete real assessments due to speech and handwriting blockers
+- **Assessment completion**: Tremor-only completion works with compatible UPDRS ratings; speech and handwriting remain unavailable and are omitted from fusion
 
 ## Project Structure
 
@@ -218,7 +208,7 @@ PROGRESS.md                   Implementation progress and blockers
 - **Unmatched cohorts**: No patient-level fusion performance measured
 - **Speech**: Raw audio feature extraction not implemented
 - **Handwriting**: Camera video cannot provide tablet features
-- **Tremor**: Manual input only, no model integration
+- **Tremor**: Seven compatible UPDRS item ratings required; no automated sensor extraction
 - **Severity**: Poor regression performance (negative R²)
 - **Clinical use**: Not validated for clinical diagnosis
 
@@ -234,14 +224,17 @@ PROGRESS.md                   Implementation progress and blockers
 ## Tests
 
 ```powershell
-# Backend tests
+# Run from the repository root
 python -m unittest discover -s tests -v
 python -m unittest discover -s app_backend/tests -v
+python -m unittest discover -s experiments/regularized_svm_rf -p 'test_*.py' -v
 
-# Frontend (in frontend directory)
-npm test  # If configured
-npm run build  # Verify build
+# Frontend (in frontend directory; npm test is not configured)
+npm run build
+npm run lint
 ```
+
+The frontend production build succeeds. The lint command currently cannot run because this repository has no ESLint configuration.
 
 ## License
 
