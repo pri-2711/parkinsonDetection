@@ -104,7 +104,7 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
 
     # Title & Header
     story.append(Paragraph("Parkinson's Disease Research Assessment Report", title_style))
-    story.append(Paragraph("Multimodal CSE Research Prototype — Final Evaluation Record", subtitle_style))
+    story.append(Paragraph("Multimodal Research Prototype — Final Evaluation Record", subtitle_style))
     story.append(Spacer(1, 10))
 
     # Prominent Disclaimer Box
@@ -183,23 +183,30 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
         prob_val = fusion.get("probability")
         prob_pct = f"{prob_val * 100:.2f}%" if prob_val is not None else "N/A"
         active_modalities = ", ".join(fusion.get("available_modalities", []))
+        omitted_modalities = ", ".join(fusion.get("missing_modalities", [])) or "None"
+        multi_modal = fusion.get("aggregation_type") != "single_modality_probability"
+        score_label = "AUC weighted score (not patient-level calibrated probability)" if multi_modal else "Single model probability"
 
         fusion_summary_data = [
             [
-                Paragraph("<b>Composite Model Classification:</b>", bold_body_style),
+                Paragraph("<b>Model Classification Indicator:</b>", bold_body_style),
                 Paragraph(f"<b>{pred_label}</b>", bold_body_style),
             ],
             [
-                Paragraph("<b>Estimated Classification Probability:</b>", body_style),
-                Paragraph(f"<b>{prob_pct}</b> (Threshold = 0.50)", body_style),
+                Paragraph(f"<b>{score_label}:</b>", body_style),
+                Paragraph(f"<b>{prob_pct}</b> (Threshold = {fusion.get('threshold', 0.5):.2f})", body_style),
             ],
             [
                 Paragraph("<b>Contributing Modalities:</b>", body_style),
                 Paragraph(active_modalities, body_style),
             ],
             [
+                Paragraph("<b>Omitted / unavailable:</b>", body_style),
+                Paragraph(omitted_modalities, body_style),
+            ],
+            [
                 Paragraph("<b>Validation Scope:</b>", body_style),
-                Paragraph("Decision-level AUC-weighted blend (validation fold weights). Multi-cohort research evaluation only.", small_note_style),
+                Paragraph(fusion.get("score_interpretation", "Research result only; multimodal patient-level performance has not been measured."), small_note_style),
             ],
         ]
         f_table = Table(fusion_summary_data, colWidths=[200, 332])
@@ -304,6 +311,20 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
     sp_outcome = spiral_step.get("outcome", {})
     sp_error = spiral_step.get("error")
 
+    canvas_observation = sp_outcome.get("canvas_telemetry", {}) if isinstance(sp_outcome, dict) else {}
+    if canvas_observation:
+        pressure_coverage = canvas_observation.get("pressure_coverage")
+        pressure_text = "unavailable" if pressure_coverage is None else f"{pressure_coverage * 100:.1f}% of samples"
+        canvas_lines = [
+            "<b>Saved 2D canvas telemetry (not used by the digitizer-trained classifier):</b>",
+            f"Samples: {canvas_observation.get('sample_count', 'N/A')} | Strokes: {canvas_observation.get('stroke_count', 'N/A')} | "
+            f"Path length: {canvas_observation.get('path_length_px', 'N/A')} px | Mean speed: {canvas_observation.get('mean_speed_px_per_second', 'N/A')} px/s",
+            f"Mean acceleration: {canvas_observation.get('mean_acceleration_px_per_second2', 'N/A')} px/s^2 | "
+            f"Mean jerk: {canvas_observation.get('mean_jerk_px_per_second3', 'N/A')} px/s^3 | Pressure reported by device: {pressure_text}",
+            "<i>These canvas observations are screen-coordinate measurements. They do not provide calibrated pressure, grip angle, Z, or digitizer-equivalent measurements.</i>",
+        ]
+        story.append(Paragraph("<br/>".join(canvas_lines), small_note_style))
+
     if sp_outcome and "probability" in sp_outcome:
         sp_prob = sp_outcome["probability"]
         sp_pred = "Parkinson's Class" if sp_outcome.get("prediction") == 1 else "Control Class"
@@ -331,6 +352,27 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
         )
         story.append(Paragraph(status_desc, body_style))
 
+    video_analysis = sp_outcome.get("video_analysis", {}) if isinstance(sp_outcome, dict) else {}
+    if video_analysis:
+        trajectory = video_analysis.get("trajectory", {})
+        video_lines = [
+            "<b>Separate spiral video analysis (OpenCV visual baseline; no classifier used):</b>",
+            f"Frames: {video_analysis.get('video', {}).get('frame_count', 'N/A')} | Duration: {video_analysis.get('video', {}).get('duration_seconds', 'N/A')} s | "
+            f"Tracked candidate points: {trajectory.get('tracked_points', 0)}",
+        ]
+        if trajectory.get("path_length_px") is not None:
+            video_lines.append(
+                f"Visible-change path: {trajectory.get('path_length_px')} px | Mean speed: {trajectory.get('mean_speed_px_per_second')} px/s | "
+                f"Speed variation (CV): {trajectory.get('speed_coefficient_of_variation')} | Mean direction change: {trajectory.get('mean_direction_change_degrees')} degrees"
+            )
+        video_lines.append(
+            f"Red candidate movement annotations: {len(video_analysis.get('candidate_movement_events', []))} | "
+            f"Blue visible-appearance observations: {len(video_analysis.get('visible_appearance_events', []))}. "
+            "Annotated video is available through authenticated assessment history."
+        )
+        video_lines.extend(f"<i>Limitation: {item}</i>" for item in video_analysis.get("limitations", []))
+        story.append(Paragraph("<br/>".join(video_lines), small_note_style))
+
     story.append(Spacer(1, 14))
 
     # Modality 3: Speech Assessment
@@ -340,13 +382,17 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
     spch_outcome = speech_step.get("outcome", {})
     spch_error = speech_step.get("error")
 
-    passage_text = (
-        "<b>Standardized Reading Passage:</b><br/>"
-        "<i>\"Today is a pleasant day. I am speaking at my normal pace and volume. "
-        "I will read each sentence clearly and naturally, without rushing. "
-        "After finishing the passage, I will pause briefly before ending the recording.\"</i>"
-    )
-    story.append(Paragraph(passage_text, body_style))
+    recording_mode = spch_outcome.get("recording_mode") if isinstance(spch_outcome, dict) else None
+    if recording_mode == "reading":
+        passage_text = (
+            "<b>Standardized Reading Passage:</b><br/>"
+            "<i>\"Today is a pleasant day. I am speaking at my normal pace and volume. "
+            "I will read each sentence clearly and naturally, without rushing. "
+            "After finishing the passage, I will pause briefly before ending the recording.\"</i>"
+        )
+        story.append(Paragraph(passage_text, body_style))
+    elif recording_mode == "sustained_vowel":
+        story.append(Paragraph("<b>Recording mode:</b> Sustained /a/ vowel. This is not equivalent to the reading-passage task.", body_style))
     story.append(Spacer(1, 4))
 
     if spch_outcome and "probability" in spch_outcome:
@@ -358,9 +404,16 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
         )
         story.append(Paragraph(spch_text, body_style))
     else:
+        extraction_summary = ""
+        if spch_outcome and spch_outcome.get("feature_extraction") == "completed":
+            extraction_summary = (
+                f" Audio features extracted: {spch_outcome.get('feature_count', 'N/A')} columns in "
+                f"{spch_outcome.get('feature_schema', 'an experimental schema')}; no audio file was retained."
+            )
         spch_msg = (
             f"<b>Status:</b> {spch_status.capitalize()}. "
-            f"{spch_error or 'Audio upload validated. Full classification disabled: dataset contains 45 precomputed acoustic features (jitter, shimmer, HNR, RPDE, DFA, PPE, gender) without a verified raw-audio feature extractor in the repository.'}"
+            f"{spch_error or 'No compatible trained speech model is available for this recording mode.'}{extraction_summary} "
+            "The legacy classifier was not used with an incompatible feature schema."
         )
         story.append(Paragraph(spch_msg, body_style))
 
@@ -396,7 +449,7 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
     story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=8))
     footer_text = (
         "Parkinson's Disease Research Project | Department of Computer Science & Engineering | "
-        "Academic Research Prototype | Confidential"
+        "Research report | Experimental result, not a diagnosis"
     )
     story.append(Paragraph(footer_text, small_note_style))
 

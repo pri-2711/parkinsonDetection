@@ -9,6 +9,7 @@ export function Dashboard() {
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadAssessment();
@@ -28,7 +29,7 @@ export function Dashboard() {
       const newAssessment = await assessmentsApi.create();
       setAssessment(newAssessment);
     } catch (err) {
-      console.error('Failed to load assessment:', err);
+      setError(err instanceof Error ? err.message : 'Could not load or create an assessment.');
     } finally {
       setLoading(false);
     }
@@ -39,8 +40,9 @@ export function Dashboard() {
     try {
       const newAssessment = await assessmentsApi.create();
       setAssessment(newAssessment);
+      setError('');
     } catch (err) {
-      console.error('Failed to create new assessment:', err);
+      setError(err instanceof Error ? err.message : 'Could not create a new assessment.');
     } finally {
       setCreating(false);
     }
@@ -48,16 +50,11 @@ export function Dashboard() {
 
   const getStepStatus = (step: 'speech' | 'spiral' | 'tremor') => {
     if (!assessment) return 'pending';
-    const stepData = assessment.steps[step];
-    if (stepData.status === 'completed' && stepData.outcome) return 'completed';
-    if (stepData.status === 'failed') return 'failed';
-    return 'pending';
+    return assessment.steps[step].status;
   };
 
-  const hasAnyCompleted = assessment && (
-    assessment.steps.speech.status === 'completed' ||
-    assessment.steps.spiral.status === 'completed' ||
-    assessment.steps.tremor.status === 'completed'
+  const hasAnyActivity = assessment && Object.values(assessment.steps).some(
+    (step) => step.status !== 'pending' || step.outcome !== null,
   );
 
   if (loading) return <div className="loading"><p>Loading dashboard…</p></div>;
@@ -83,6 +80,8 @@ export function Dashboard() {
         </button>
       </div>
 
+      {error && <div role="alert" style={{ backgroundColor: 'var(--error-bg)', border: '1px solid var(--error)', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.5rem' }}>{error}</div>}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
         <StatusCard
           title="Tremor Assessment"
@@ -100,8 +99,10 @@ export function Dashboard() {
           status={getStepStatus('spiral')}
           description={
             assessment?.steps.spiral.status === 'completed'
-              ? 'Completed — Spiral kinematic telemetry extracted and classified with calibrated RBF SVM.'
-              : 'Draw the Archimedean spiral on the interactive canvas, upload tablet CSV telemetry, or inspect video.'
+              ? 'Completed — compatible tablet telemetry was classified with the calibrated RBF SVM.'
+              : assessment?.steps.spiral.status === 'unavailable'
+              ? 'Canvas observations and/or experimental video analysis are saved; these are not compatible with the digitizer classifier.'
+              : 'Draw to save browser telemetry, or upload a separate video for experimental visual observations. Neither invents digitizer measurements.'
           }
           onClick={() => assessment && navigate(`/handwriting/${assessment.id}`)}
         />
@@ -111,10 +112,12 @@ export function Dashboard() {
           status={getStepStatus('speech')}
           description={
             assessment?.steps.speech.status === 'completed'
-              ? 'Completed — Acoustic features classified.'
+              ? 'Completed with a compatible trained classifier.'
+              : assessment?.steps.speech.status === 'unavailable'
+              ? `${assessment.steps.speech.outcome?.feature_count ?? 0} experimental speech features saved; no compatible classifier is trained for this mode.`
               : assessment?.steps.speech.status === 'failed'
-              ? 'Audio sample recorded & passage logged. (Precomputed 45-feature schema required for live prediction).'
-              : 'Speak the standardized reading passage in-browser or upload WAV recording.'
+              ? `Audio processing failed: ${assessment.steps.speech.error || 'review this step and try again.'}`
+              : 'Record or upload a WAV. Features use speech_audio_v2; prediction needs a separately trained compatible model.'
           }
           onClick={() => assessment && navigate(`/speech/${assessment.id}`)}
         />
@@ -126,9 +129,9 @@ export function Dashboard() {
             className="btn btn-primary"
             style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}
             onClick={() => navigate(`/results/${assessment.id}`)}
-            disabled={!hasAnyCompleted}
+            disabled={!hasAnyActivity}
           >
-            {hasAnyCompleted ? 'View & Finalize Results →' : 'Complete at least one test to view results'}
+            {hasAnyActivity ? 'View Assessment Results & Status' : 'Submit or review a modality to view results'}
           </button>
         </div>
       )}

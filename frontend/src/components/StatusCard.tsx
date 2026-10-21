@@ -1,6 +1,6 @@
 interface StatusCardProps {
   title: string;
-  status: 'pending' | 'completed' | 'failed' | 'unavailable';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
   description?: string;
   onClick?: () => void;
 }
@@ -8,6 +8,7 @@ interface StatusCardProps {
 export function StatusCard({ title, status, description, onClick }: StatusCardProps) {
   const statusLabels = {
     pending: 'Pending',
+    processing: 'Processing',
     completed: 'Completed',
     failed: 'Action Required / Blocked',
     unavailable: 'Protocol Notice',

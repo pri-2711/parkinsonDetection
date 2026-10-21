@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, g, jsonify, Response
+from flask import Blueprint, current_app, g, jsonify, Response, request, send_file
+from werkzeug.datastructures import FileStorage
 import numpy as np
 import pandas as pd
 
@@ -12,6 +13,14 @@ from app_backend.services.fusion_service import FusionService
 from app_backend.services.pdf_report import generate_assessment_pdf
 from app_backend.services.sessions import AssessmentSessionStore
 from app_backend.services.trajectory_features import extract_tablet_trajectory_features
+from app_backend.services.audio_preprocessing import validate_wav
+from app_backend.services.acoustic_features import AcousticFeatureExtractor
+from app_backend.services.spiral_preprocessing import validate_spiral_video
+from app_backend.services.spiral_video_analysis import analyze_spiral_video
+from app_backend.services.canvas_telemetry import summarize_canvas_telemetry
+import re
+import uuid
+from pathlib import Path
 
 assessment_bp = Blueprint("assessment", __name__)
 
@@ -121,7 +130,18 @@ def complete_assessment(assessment_id: int):
                 tremor_probability=tremor_prob,
                 threshold=0.5,
             )
-            fusion_result["output_type"] = "research_model_probability_not_clinical_diagnosis"
+            fusion_result["missing_modalities"] = [
+                name for name, value in (("speech", speech_prob), ("handwriting", handwriting_prob), ("tremor", tremor_prob))
+                if value is None
+            ]
+            fusion_result["aggregation_type"] = "single_modality_probability" if len(fusion_result["available_modalities"]) == 1 else "auc_weighted_decision_level_score"
+            fusion_result["score_interpretation"] = (
+                "One model's probability; no multimodal fusion was performed."
+                if len(fusion_result["available_modalities"]) == 1 else
+                "AUC-weighted mean of independent modality model probabilities. It is not calibrated or validated as a patient-level multimodal probability."
+            )
+            fusion_result["output_type"] = "research_model_aggregation_not_clinical_diagnosis"
+            fusion_result["threshold"] = 0.5
             fusion_result["patient_level_validation"] = "not_measured_unmatched_modalities"
         except ValueError:
             raise APIError(503, "fusion_weights_unavailable", "Validated classification fusion weights are unavailable.") from None
@@ -171,8 +191,14 @@ def update_speech_step(assessment_id: int):
     if isinstance(outcome, dict) and "probability" in outcome:
         raise APIError(422, "prediction_must_use_model_endpoint", "Client-supplied probabilities cannot be saved as model predictions.")
 
+    existing_outcome = assessment.get("steps", {}).get("speech", {}).get("outcome") or {}
+    if isinstance(outcome, dict) and isinstance(existing_outcome, dict):
+        outcome = {**existing_outcome, **outcome}
+    elif outcome is None and isinstance(existing_outcome, dict) and existing_outcome:
+        outcome = existing_outcome
+
     step_data = {
-        "status": "completed" if outcome else "failed",
+        "status": "completed" if outcome and outcome.get("model_verified") is True else ("unavailable" if outcome else "failed"),
         "outcome": outcome,
         "error": error,
         "updated_at": assessment.get("updated_at"),
@@ -197,14 +223,63 @@ def update_spiral_step(assessment_id: int):
     if isinstance(outcome, dict) and "probability" in outcome:
         raise APIError(422, "prediction_must_use_model_endpoint", "Client-supplied probabilities cannot be saved as model predictions.")
 
+    existing_outcome = assessment.get("steps", {}).get("spiral", {}).get("outcome") or {}
+    if isinstance(outcome, dict) and isinstance(existing_outcome, dict):
+        outcome = {**existing_outcome, **outcome}
+    elif outcome is None and isinstance(existing_outcome, dict) and existing_outcome:
+        outcome = existing_outcome
+
     step_data = {
-        "status": "completed" if outcome else "failed",
+        "status": "completed" if outcome and outcome.get("model_verified") is True else ("unavailable" if outcome else "failed"),
         "outcome": outcome,
         "error": error,
         "updated_at": assessment.get("updated_at"),
     }
     updated = repo.update_assessment_step(assessment_id, g.user_id, "spiral", step_data)
     return jsonify(updated), 200
+
+
+@assessment_bp.post("/api/assessments/<int:assessment_id>/spiral/canvas/observe")
+@login_required
+def save_canvas_observation(assessment_id: int):
+    repo = _get_assessment_repo()
+    assessment = repo.get_assessment(assessment_id, g.user_id)
+    if not assessment:
+        raise APIError(404, "assessment_not_found", "Assessment not found.")
+    if assessment["status"] == "completed":
+        raise APIError(409, "assessment_already_completed", "Assessment is already completed.")
+    step = dict(assessment.get("steps", {}).get("spiral") or {})
+    outcome = dict(step.get("outcome") or {})
+    if not outcome.get("model_verified"):
+        step.update({"status": "processing", "outcome": outcome, "error": None})
+        repo.update_assessment_step(assessment_id, g.user_id, "spiral", step)
+    try:
+        observation = summarize_canvas_telemetry(g.get("json_payload"))
+    except APIError as error:
+        if not outcome.get("model_verified"):
+            outcome["canvas_telemetry_error"] = {"code": error.code, "message": error.message}
+            completed_video = (outcome.get("video_analysis") or {}).get("status") == "completed"
+            step.update({
+                "status": "unavailable" if completed_video else "failed",
+                "outcome": outcome,
+                "error": None if completed_video else error.message,
+                "error_code": error.code,
+            })
+            repo.update_assessment_step(assessment_id, g.user_id, "spiral", step)
+        raise
+    outcome["canvas_telemetry"] = observation
+    outcome.pop("canvas_telemetry_error", None)
+    if not outcome.get("model_verified"):
+        outcome["prediction_status"] = "unavailable"
+        step.update({
+            "status": "unavailable",
+            "error": "Canvas telemetry does not contain all digitizer measurements required by the trained handwriting model.",
+        })
+    else:
+        step.update({"status": "completed", "error": None})
+    step.update({"outcome": outcome, "updated_at": assessment.get("updated_at")})
+    updated = repo.update_assessment_step(assessment_id, g.user_id, "spiral", step)
+    return jsonify({"assessment": updated, "observation": observation}), 200
 
 
 @assessment_bp.post("/api/assessments/<int:assessment_id>/tremor")
@@ -264,6 +339,9 @@ def predict_tremor_step(assessment_id: int):
     outcome["output_type"] = "research_model_probability_not_clinical_diagnosis"
     outcome["model_verified"] = True
     outcome["input_features"] = {name: int(payload[name]) for name in adapter.features}
+    existing_outcome = assessment.get("steps", {}).get("spiral", {}).get("outcome") or {}
+    if isinstance(existing_outcome, dict):
+        outcome = {**existing_outcome, **outcome}
     step_data = {"status": "completed", "outcome": outcome, "error": None, "updated_at": assessment.get("updated_at")}
     updated = repo.update_assessment_step(assessment_id, g.user_id, "tremor", step_data)
     return jsonify({"assessment": updated, "outcome": outcome}), 200
@@ -291,6 +369,20 @@ def predict_spiral_step(assessment_id: int):
     if not isinstance(points_data, list) or len(points_data) < 2:
         raise APIError(422, "invalid_trajectory", "Trajectory must contain at least 2 coordinate points.")
 
+    measured_fields = {"x", "y", "z", "pressure", "grip_angle", "timestamp"}
+    if any(not isinstance(point, dict) for point in points_data):
+        raise APIError(422, "invalid_trajectory", "Each trajectory sample must be a JSON object.")
+    missing_measurements = sorted({
+        field for point in points_data for field in measured_fields if field not in point
+    })
+    if missing_measurements:
+        raise APIError(
+            422,
+            "tablet_telemetry_required",
+            "The handwriting classifier needs measured tablet x/y/z, pressure, grip angle, and timestamp values. "
+            "A browser canvas supplies only 2D coordinates and timing; it cannot provide the missing digitizer measurements.",
+        )
+
     # Format points into the PaHaW tablet schema expected by extract_tablet_trajectory_features
     # TABLET_COLUMNS = ("point_index", "x", "y", "z", "pressure", "grip_angle", "timestamp", "test_id")
     try:
@@ -300,10 +392,10 @@ def predict_spiral_step(assessment_id: int):
                 "point_index": int(pt.get("point_index", idx)),
                 "x": float(pt["x"]),
                 "y": float(pt["y"]),
-                "z": float(pt.get("z", 0.0)),
-                "pressure": float(pt.get("pressure", 0.5)),
-                "grip_angle": float(pt.get("grip_angle", 45.0)),
-                "timestamp": float(pt.get("timestamp", idx * 10)),
+                "z": float(pt["z"]),
+                "pressure": float(pt["pressure"]),
+                "grip_angle": float(pt["grip_angle"]),
+                "timestamp": float(pt["timestamp"]),
                 "test_id": int(pt.get("test_id", 1)),
             })
         traj_df = pd.DataFrame(rows)
@@ -325,6 +417,117 @@ def predict_spiral_step(assessment_id: int):
     return jsonify({"assessment": updated, "outcome": outcome}), 200
 
 
+@assessment_bp.post("/api/assessments/<int:assessment_id>/spiral/video/analyze")
+@login_required
+def analyze_spiral_video_step(assessment_id: int):
+    repo = _get_assessment_repo()
+    assessment = repo.get_assessment(assessment_id, g.user_id)
+    if not assessment:
+        raise APIError(404, "assessment_not_found", "Assessment not found.")
+    if assessment["status"] == "completed":
+        raise APIError(409, "assessment_already_completed", "Assessment is already completed.")
+    uploaded = request.files.get("file")
+    if not isinstance(uploaded, FileStorage) or not uploaded.filename:
+        raise APIError(400, "missing_video", "Attach the spiral recording as multipart field 'file'.")
+    data = uploaded.read(current_app.config["SPIRAL_MAX_BYTES"] + 1)
+    steps = assessment.get("steps", {})
+    spiral = dict(steps.get("spiral") or {})
+    outcome = dict(spiral.get("outcome") or {})
+    source_name = Path(uploaded.filename).name[:255]
+    outcome["video_analysis"] = {"status": "processing", "source_filename": source_name}
+    if not outcome.get("model_verified"):
+        spiral["status"] = "processing"
+    spiral.update({"outcome": outcome, "updated_at": assessment.get("updated_at")})
+    repo.update_assessment_step(assessment_id, g.user_id, "spiral", spiral)
+    try:
+        metadata = validate_spiral_video(data, uploaded.filename, uploaded.content_type, current_app.config)
+        annotated, output_ext, analysis = analyze_spiral_video(data, uploaded.filename, current_app.config)
+    except APIError as error:
+        outcome["video_analysis"] = {"status": "failed", "source_filename": source_name,
+                                     "error": {"code": error.code, "message": error.message}}
+        if not outcome.get("model_verified"):
+            spiral["status"] = "unavailable"
+            spiral["error"] = "The video analysis did not complete; camera video is not a compatible classifier input."
+        spiral.update({"outcome": outcome, "updated_at": assessment.get("updated_at")})
+        repo.update_assessment_step(assessment_id, g.user_id, "spiral", spiral)
+        raise
+
+    video_id = uuid.uuid4().hex
+    media_root = Path(current_app.config["SPIRAL_MEDIA_DIR"]).resolve()
+    assessment_dir = (media_root / f"assessment_{assessment_id}").resolve()
+    if media_root not in assessment_dir.parents:
+        raise APIError(500, "media_storage_failed", "Private video storage could not be prepared.")
+    assessment_dir.mkdir(parents=True, exist_ok=True)
+    source_ext = Path(uploaded.filename).suffix.lower()
+    original_path = assessment_dir / f"{video_id}_original{source_ext}"
+    annotated_path = assessment_dir / f"{video_id}_annotated.{output_ext}"
+    try:
+        original_path.write_bytes(data)
+        annotated_path.write_bytes(annotated)
+        outcome["video_analysis"] = {
+            **analysis,
+            "status": "completed",
+            "source_filename": source_name,
+            "source_metadata": metadata,
+            "video_id": video_id,
+            "annotated_video_url": f"/api/assessments/{assessment_id}/spiral/video/annotated",
+            "original_video_url": f"/api/assessments/{assessment_id}/spiral/video/original",
+        }
+        if not outcome.get("model_verified"):
+            outcome["prediction_status"] = "unavailable"
+            spiral["status"] = "unavailable"
+            spiral["error"] = "Video observations are experimental and are not compatible with the trained digitizer classifier."
+        spiral["outcome"] = outcome
+        spiral["updated_at"] = assessment.get("updated_at")
+        # Keep the classifier's status/probability untouched; video analysis is a separate sidecar.
+        updated = repo.update_assessment_step(assessment_id, g.user_id, "spiral", spiral)
+        if not updated:
+            raise RuntimeError("assessment disappeared during video persistence")
+    except Exception:
+        original_path.unlink(missing_ok=True)
+        annotated_path.unlink(missing_ok=True)
+        outcome["video_analysis"] = {"status": "failed", "source_filename": source_name,
+                                     "error": {"code": "video_persistence_failed", "message": "Analysis output could not be associated with this assessment."}}
+        if not outcome.get("model_verified"):
+            spiral["status"] = "unavailable"
+            spiral["error"] = "The video analysis output could not be saved; camera video is not a compatible classifier input."
+        spiral.update({"outcome": outcome, "updated_at": assessment.get("updated_at")})
+        repo.update_assessment_step(assessment_id, g.user_id, "spiral", spiral)
+        raise APIError(500, "video_persistence_failed", "Video analysis succeeded but could not be associated with this assessment.") from None
+    return jsonify({"assessment_id": assessment_id, "analysis": outcome["video_analysis"]}), 200
+
+
+def _associated_spiral_video(assessment_id: int, variant: str):
+    assessment = _get_assessment_repo().get_assessment(assessment_id, g.user_id)
+    if not assessment:
+        raise APIError(404, "assessment_not_found", "Assessment not found.")
+    outcome = assessment.get("steps", {}).get("spiral", {}).get("outcome", {})
+    video = outcome.get("video_analysis", {}) if isinstance(outcome, dict) else {}
+    video_id = video.get("video_id") if isinstance(video, dict) else None
+    if not isinstance(video_id, str) or not re.fullmatch(r"[0-9a-f]{32}", video_id):
+        raise APIError(404, "video_not_found", "No video is associated with this assessment.")
+    suffix = "annotated.mp4" if variant == "annotated" else f"original{Path(video.get('source_filename', '')).suffix.lower()}"
+    path = (Path(current_app.config["SPIRAL_MEDIA_DIR"]).resolve() / f"assessment_{assessment_id}" / f"{video_id}_{suffix}").resolve()
+    if not path.is_file() or Path(current_app.config["SPIRAL_MEDIA_DIR"]).resolve() not in path.parents:
+        raise APIError(404, "video_not_found", "The associated video file is not available.")
+    mime = "video/mp4" if variant == "annotated" else {
+        ".mov": "video/quicktime", ".avi": "video/x-msvideo", ".webm": "video/webm", ".mp4": "video/mp4"
+    }.get(path.suffix.lower(), "application/octet-stream")
+    return send_file(path, mimetype=mime, as_attachment=False, conditional=True, max_age=0)
+
+
+@assessment_bp.get("/api/assessments/<int:assessment_id>/spiral/video/annotated")
+@login_required
+def get_annotated_spiral_video(assessment_id: int):
+    return _associated_spiral_video(assessment_id, "annotated")
+
+
+@assessment_bp.get("/api/assessments/<int:assessment_id>/spiral/video/original")
+@login_required
+def get_original_spiral_video(assessment_id: int):
+    return _associated_spiral_video(assessment_id, "original")
+
+
 @assessment_bp.post("/api/assessments/<int:assessment_id>/speech/predict")
 @login_required
 def predict_speech_step(assessment_id: int):
@@ -334,39 +537,73 @@ def predict_speech_step(assessment_id: int):
         raise APIError(404, "assessment_not_found", "Assessment not found.")
     if assessment["status"] == "completed":
         raise APIError(409, "assessment_already_completed", "Assessment is already completed.")
-
-    adapter = current_app.extensions["model_registry"].models.get("speech")
-    if not adapter or not adapter.ready:
-        raise APIError(503, "speech_model_unavailable", "The saved speech model is not ready.")
-
-    payload = g.get("json_payload", {})
-    passage_version = payload.get("passage_version", "1.0")
-    passage_text = payload.get("passage_text", (
-        "Today is a pleasant day. I am speaking at my normal pace and volume. "
-        "I will read each sentence clearly and naturally, without rushing. "
-        "After finishing the passage, I will pause briefly before ending the recording."
-    ))
-
-    # Record the validated reading passage and transparent 501 blocker status
-    error_message = (
-        "Prediction is disabled: the repository contains precomputed acoustic features "
-        "but no verified raw-audio feature extractor matching the saved model's 45-feature schema."
-    )
-    step_data = {
-        "status": "failed",
-        "outcome": {
-            "passage_version": passage_version,
-            "passage_text": passage_text,
-            "audio_duration_seconds": payload.get("duration_seconds", 0),
-            "sample_rate": payload.get("sample_rate", 44100),
-            "model_family": adapter.family,
+    prior_step = dict(assessment.get("steps", {}).get("speech") or {})
+    prior_outcome = dict(prior_step.get("outcome") or {})
+    prior_step.update({"status": "processing", "outcome": prior_outcome, "error": None})
+    repo.update_assessment_step(assessment_id, g.user_id, "speech", prior_step)
+    mode = request.form.get("mode", "")
+    try:
+        uploaded = request.files.get("file")
+        if not isinstance(uploaded, FileStorage) or not uploaded.filename:
+            raise APIError(400, "missing_audio", "Attach the recording as multipart field 'file'.")
+        audio_bytes = uploaded.read(current_app.config["AUDIO_MAX_BYTES"] + 1)
+        audio_metadata = validate_wav(audio_bytes, uploaded.filename, uploaded.content_type, current_app.config)
+        try:
+            gender_code = int(request.form.get("gender_code", ""))
+        except ValueError:
+            raise APIError(422, "invalid_gender_code", "Provide gender_code as 0 or 1.") from None
+        extractor = AcousticFeatureExtractor()
+        features = extractor.extract(audio_bytes, audio_metadata, mode=mode, gender_code=gender_code)
+        feature_values = {name: float(value) for name, value in features.iloc[0].items()}
+        base_outcome = {
+            "audio_received": True, "audio_stored": False, "recording_mode": mode,
+            "audio_duration_seconds": audio_metadata["duration_seconds"],
+            "sample_rate": audio_metadata["sample_rate_hz"], "audio_format": audio_metadata["format"],
+            "audio_channels": audio_metadata["channels"], "feature_schema": extractor.schema,
+            "feature_extraction": "completed", "feature_values": feature_values,
+            "feature_count": len(feature_values), "gender_code": gender_code,
+            "passage_version": request.form.get("passage_version") if mode == "reading" else None,
             "model_verified": False,
-        },
-        "error": error_message,
-        "updated_at": assessment.get("updated_at"),
-    }
-    updated = repo.update_assessment_step(assessment_id, g.user_id, "speech", step_data)
-    raise APIError(501, "raw_audio_feature_extractor_unavailable", error_message)
+        }
+        v2_model = current_app.extensions["speech_audio_v2_models"][mode]
+        if not v2_model.ready:
+            error_message = (
+                "Speech features were extracted and saved under speech_audio_v2, but no trained model is available "
+                "for this recording mode. The incompatible legacy 45-feature SVM was not used."
+            )
+            outcome = {**base_outcome, "prediction_status": "unavailable"}
+            step_data = {"status": "unavailable", "outcome": outcome, "error": error_message,
+                         "updated_at": assessment.get("updated_at")}
+            updated = repo.update_assessment_step(assessment_id, g.user_id, "speech", step_data)
+            return jsonify({"assessment": updated, "outcome": outcome, "status": "unavailable"}), 200
+
+        try:
+            result = v2_model.predict(features)
+        except Exception:
+            raise APIError(500, "speech_prediction_failed", "The trained speech_audio_v2 model could not produce a valid prediction.") from None
+        outcome = {**base_outcome, **result, "prediction_status": "completed", "model_family": "speech_audio_v2_svc",
+                   "model_verified": True, "output_type": "research_model_probability_not_clinical_diagnosis"}
+        step_data = {"status": "completed", "outcome": outcome, "error": None,
+                     "updated_at": assessment.get("updated_at")}
+        updated = repo.update_assessment_step(assessment_id, g.user_id, "speech", step_data)
+        return jsonify({"assessment": updated, "outcome": outcome, "status": "completed"}), 200
+    except APIError as error:
+        if not prior_outcome.get("model_verified"):
+            failure_step = {"status": "failed", "outcome": prior_outcome, "error": error.message,
+                            "error_code": error.code, "updated_at": assessment.get("updated_at")}
+        else:
+            failure_step = {**prior_step, "status": "completed", "outcome": prior_outcome,
+                            "error": None, "last_attempt_error": {"code": error.code, "message": error.message}}
+        repo.update_assessment_step(assessment_id, g.user_id, "speech", failure_step)
+        raise
+    except Exception:
+        if not prior_outcome.get("model_verified"):
+            repo.update_assessment_step(assessment_id, g.user_id, "speech", {
+                "status": "failed", "outcome": prior_outcome,
+                "error": "Unexpected audio processing failure.", "error_code": "speech_processing_failed",
+                "updated_at": assessment.get("updated_at"),
+            })
+        raise APIError(500, "speech_processing_failed", "Unexpected audio processing failure.") from None
 
 
 @assessment_bp.get("/api/assessments/<int:assessment_id>/report.pdf")

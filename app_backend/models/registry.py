@@ -44,11 +44,15 @@ class ModelRegistry:
                 "expected_feature_count": len(adapter.features),
                 "error_code": adapter.error_code,
             }
+        result["speech"]["legacy_baseline_prediction_available"] = False
         result["speech"]["prediction_available"] = False
-        result["speech"]["blocker"] = "raw_audio_feature_extractor_unavailable"
-        result["speech"]["gender_metadata_required_by_model"] = "gender is an input feature in the trained schema"
-        result["handwriting"]["prediction_available"] = False
-        result["handwriting"]["blocker"] = "camera_to_tablet_feature_mapping_unvalidated"
+        result["speech"]["blocker"] = "speech_audio_v2_mode_model_required"
+        result["speech"]["input_schema"] = "speech_audio_v2 (separate from legacy 45-feature SVM)"
+        result["speech"]["gender_metadata_required"] = True
+        result["handwriting"]["prediction_available"] = result["handwriting"]["model_loaded"]
+        result["handwriting"]["input_contract"] = "tablet x/y/z, measured pressure, measured grip angle, and timestamp"
+        result["handwriting"]["camera_input_prediction_available"] = False
+        result["handwriting"]["camera_blocker"] = "camera_to_tablet_feature_mapping_unvalidated"
         result["tremor"]["prediction_available"] = result["tremor"]["model_loaded"]
         result["tremor"]["input_contract"] = "seven UPDRS III items 20/21 ratings, each 0-4"
         return result

@@ -71,13 +71,20 @@ def validate_spiral_video(data: bytes, filename: str, content_type: str | None, 
                 raise APIError(400, "invalid_spiral_video", "The uploaded video could not be decoded.")
             fps = float(capture.get(cv2.CAP_PROP_FPS))
             declared_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-            if fps <= 0 or declared_frames <= 0:
+            width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if fps <= 0 or declared_frames <= 0 or width <= 0 or height <= 0:
                 raise APIError(400, "invalid_spiral_video", "The video has no usable frame-rate or frame-count metadata.")
             duration = declared_frames / fps
             if duration <= 0 or duration > config["SPIRAL_MAX_SECONDS"]:
-                raise APIError(422, "invalid_spiral_duration", "Spiral videos must be 30 seconds or shorter.")
+                raise APIError(422, "invalid_spiral_duration", f"Spiral videos must be {config['SPIRAL_MAX_SECONDS']:g} seconds or shorter.")
+            if (width < 32 or height < 32 or width > config["SPIRAL_MAX_DIMENSION"]
+                    or height > config["SPIRAL_MAX_DIMENSION"]):
+                raise APIError(422, "invalid_video_dimensions", "Video frame dimensions are outside the supported range.")
             if declared_frames > config["SPIRAL_MAX_FRAMES"]:
                 raise APIError(422, "too_many_video_frames", "The video exceeds the configured frame-count limit.")
+            if width * height * declared_frames > config.get("SPIRAL_MAX_TOTAL_PIXELS", 2_000_000_000):
+                raise APIError(422, "video_processing_budget_exceeded", "The video resolution and frame count exceed the analysis processing limit.")
             decoded = 0
             while decoded <= config["SPIRAL_MAX_FRAMES"]:
                 ok, frame = capture.read()
@@ -85,6 +92,8 @@ def validate_spiral_video(data: bytes, filename: str, content_type: str | None, 
                     break
                 if frame is None or frame.size == 0:
                     raise APIError(400, "invalid_spiral_video", "The video contains an undecodable frame.")
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    raise APIError(400, "invalid_spiral_video", "The video contains inconsistent frame dimensions.")
                 decoded += 1
             if decoded == 0 or decoded != declared_frames:
                 raise APIError(400, "invalid_spiral_video", "The uploaded video is truncated or has inconsistent frame metadata.")
@@ -92,6 +101,8 @@ def validate_spiral_video(data: bytes, filename: str, content_type: str | None, 
                 "media_type": suffix.lstrip("."),
                 "frame_count": decoded,
                 "fps": round(fps, 4),
+                "width": width,
+                "height": height,
                 "duration_seconds": round(duration, 4),
                 "byte_count": len(data),
             }

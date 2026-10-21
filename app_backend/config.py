@@ -30,6 +30,7 @@ DEFAULT_EXPERIMENT_ARTIFACTS = (
 DEFAULT_FUSION_WEIGHTS = (
     REPOSITORY_ROOT / "experiments" / "regularized_svm_rf" / "results" / "fusion_validation_weights.json"
 )
+DEFAULT_SPEECH_AUDIO_V2_ARTIFACTS = REPOSITORY_ROOT / "experiments" / "speech_audio_v2" / "artifacts"
 
 
 def _allowed_locations() -> tuple[str, ...]:
@@ -50,11 +51,14 @@ class BackendConfig:
     SPIRAL_MAX_SECONDS = float(os.getenv("SPIRAL_MAX_SECONDS", 30.0))
     SPIRAL_MAX_FRAMES = int(os.getenv("SPIRAL_MAX_FRAMES", 1200))
     SPIRAL_MAX_DIMENSION = int(os.getenv("SPIRAL_MAX_DIMENSION", 4096))
+    SPIRAL_MAX_TOTAL_PIXELS = int(os.getenv("SPIRAL_MAX_TOTAL_PIXELS", 2_000_000_000))
     UPLOAD_TEMP_DIR = os.getenv("UPLOAD_TEMP_DIR") or str(
         Path(tempfile.gettempdir()) / "parkinson-assessment-uploads"
     )
+    SPIRAL_MEDIA_DIR = os.getenv("SPIRAL_MEDIA_DIR") or str(REPOSITORY_ROOT / "data" / "spiral_media")
     MODEL_ARTIFACT_DIR = os.getenv("MODEL_ARTIFACT_DIR", str(DEFAULT_EXPERIMENT_ARTIFACTS))
     SPEECH_MODEL_FILE = os.getenv("SPEECH_MODEL_FILE", "speech_svm_tuned.joblib")
+    SPEECH_AUDIO_V2_ARTIFACT_DIR = os.getenv("SPEECH_AUDIO_V2_ARTIFACT_DIR", str(DEFAULT_SPEECH_AUDIO_V2_ARTIFACTS))
     HANDWRITING_MODEL_FILE = os.getenv("HANDWRITING_MODEL_FILE", "handwriting_svm_tuned.joblib")
     TREMOR_MODEL_FILE = os.getenv("TREMOR_MODEL_FILE", "tremor_svm_tuned.joblib")
     FUSION_WEIGHTS_FILE = os.getenv("FUSION_WEIGHTS_FILE", str(DEFAULT_FUSION_WEIGHTS))

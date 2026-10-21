@@ -54,7 +54,7 @@ Research prototype for Parkinson's disease classification from speech, handwriti
 - User registration, login, and token-based authentication
 - Assessment creation, updates, completion, and decision-level late fusion
 - Tremor classifier inference from 7 UPDRS III items (0–4) with accessible segmented selectors
-- Handwriting classifier inference from canvas drawing and tablet CSV telemetry
+- Handwriting model inference from complete measured tablet telemetry; browser canvas data alone is rejected because pressure/grip-angle fields are unavailable
 - Upload validation for audio and video with transparent 501 diagnostic responses
 - ReportLab-based PDF research report generation and download
 - Frontend authentication, dashboard, results, and longitudinal history

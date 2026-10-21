@@ -131,7 +131,7 @@ Parkinson's disease (PD) is a neurodegenerative disorder that affects movement c
 - `POST /api/spiral/predict`: Spiral/handwriting upload validation
 - `POST /api/tremor/submit`: Legacy prototype tremor input
 - `POST /api/assessments/<id>/tremor/predict`: Authenticated classifier inference from exact 7 UPDRS III items (0–4)
-- `POST /api/assessments/<id>/spiral/predict`: Authenticated handwriting classifier inference from canvas or tablet trajectory telemetry
+- `POST /api/assessments/<id>/spiral/predict`: Authenticated handwriting classifier inference from complete measured tablet telemetry; canvas-only coordinates receive HTTP 422
 - `POST /api/assessments/<id>/speech/predict`: Authenticated speech reading passage logging and diagnostic 501 response
 - `GET /api/assessments/<id>/report.pdf`: Official downloadable PDF research assessment report
 - `POST /api/assessments`: Create authenticated assessment
@@ -224,7 +224,7 @@ Parkinson's disease (PD) is a neurodegenerative disorder that affects movement c
 
 ### Backend
 - **Speech prediction blocked**: No verified raw-audio feature extractor matching the saved model schema (45 features including gender, MFCC, Delta definitions)
-- **Handwriting prediction blocked**: Camera video cannot provide tablet pressure, grip-angle, pen-up signals, or equivalent trajectory units
+- **Handwriting prediction limited**: The model runs only on compatible measured tablet telemetry. Browser canvas and camera inputs do not provide the required sensor signals; the canvas no longer substitutes made-up pressure or grip-angle values.
 - **Tremor prediction**: Available only from the seven clinician-rated UPDRS III item 20/21 values; this research probability is not a clinical diagnosis
 - **Severity estimation**: Not deployed due to poor regression performance
 - **Assessment completion**: A tremor-only assessment can complete with valid model-generated tremor probability; speech and handwriting remain unavailable and are omitted from fusion.

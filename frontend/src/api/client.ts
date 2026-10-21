@@ -34,7 +34,7 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const headers = new Headers(options.headers);
-    if (options.body && !headers.has('Content-Type')) {
+    if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
 
@@ -50,8 +50,9 @@ class ApiClient {
         headers,
       });
     } catch (fetchErr) {
+      const target = API_URL || (typeof window !== 'undefined' ? window.location.origin : 'the current page origin');
       const err = new Error(
-        'Unable to connect to the backend server. Please ensure the Flask API is running on http://127.0.0.1:5000.'
+        `Could not reach the backend at ${target}. Check that Flask is running and that VITE_API_URL points to this backend.`
       ) as ApiError;
       err.code = 'network_error';
       throw err;
@@ -78,10 +79,37 @@ class ApiClient {
     });
   }
 
+  async postForm<T>(endpoint: string, data: FormData): Promise<T> {
+    return this.request<T>(endpoint, { method: 'POST', body: data });
+  }
+
   async get<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'GET',
     });
+  }
+
+  async getBlob(endpoint: string): Promise<Blob> {
+    const headers = new Headers();
+    const token = this.getToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, { headers });
+    } catch {
+      const target = API_URL || (typeof window !== 'undefined' ? window.location.origin : 'the current page origin');
+      const err = new Error(`Could not reach the backend at ${target}. Check the Flask server and VITE_API_URL.`) as ApiError;
+      err.code = 'network_error';
+      throw err;
+    }
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: {} }));
+      const err = new Error(errorData.error?.message || `PDF request failed with HTTP status ${response.status}`) as ApiError;
+      err.code = errorData.error?.code;
+      err.status = response.status;
+      throw err;
+    }
+    return response.blob();
   }
 }
 

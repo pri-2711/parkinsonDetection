@@ -26,18 +26,23 @@ def speech_predict():
         sessions.assert_current_step(session_id, "speech")
         sessions.begin_step(session_id, "speech")
     try:
-        adapter = current_app.extensions["model_registry"].models["speech"]
-        if not adapter.ready:
-            raise APIError(503, "speech_model_unavailable", "The saved speech model is not ready.")
         file = request.files.get("file")
         if not isinstance(file, FileStorage) or not file.filename:
             raise APIError(400, "missing_audio", "Provide an audio file in the multipart field 'file'.")
         data = file.read(current_app.config["AUDIO_MAX_BYTES"] + 1)
         metadata = validate_wav(data, file.filename, file.content_type, current_app.config)
-        extractor = AcousticFeatureExtractor(adapter)
-        # Extraction deliberately raises a stable 501 until training-time extraction is recovered.
-        features = extractor.extract(data, metadata)
+        mode = request.form.get("mode", "")
+        try:
+            gender_code = int(request.form.get("gender_code", ""))
+        except ValueError:
+            raise APIError(422, "invalid_gender_code", "Provide gender_code as 0 or 1.") from None
+        extractor = AcousticFeatureExtractor()
+        features = extractor.extract(data, metadata, mode=mode, gender_code=gender_code)
+        adapter = current_app.extensions["speech_audio_v2_models"][mode]
+        if not adapter.ready:
+            raise APIError(503, "speech_audio_v2_model_not_trained", "Audio features were extracted with speech_audio_v2, but no model has been trained for this recording mode. The legacy SVM was not used because its feature definitions are not compatible.")
         result = adapter.predict(features)
+        result.update({"feature_schema": extractor.schema, "recording_mode": mode, "model_verified": True})
         if session_id:
             sessions.record_success(session_id, "speech", result)
         return {"status": "completed", **result}

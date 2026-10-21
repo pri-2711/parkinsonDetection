@@ -101,8 +101,8 @@ This tunes SVM and Random Forest separately for speech, handwriting, and tremor 
 - `POST /api/assessments/<id>/complete` - Complete assessment and compute late fusion (authenticated)
 - `GET /api/assessments/<id>/results` - Get assessment results (authenticated)
 - `POST /api/assessments/<id>/tremor/predict` - Tremor classification from 7 UPDRS III items (0–4)
-- `POST /api/assessments/<id>/spiral/predict` - Handwriting classification from canvas or tablet telemetry
-- `POST /api/assessments/<id>/speech/predict` - Speech reading passage recording and feature contract validation
+- `POST /api/assessments/<id>/spiral/predict` - Handwriting classification from complete measured tablet telemetry; browser canvas coordinates alone receive a clear 422 response
+- `POST /api/assessments/<id>/speech/predict` - Authenticated multipart PCM WAV processing with speech_audio_v2 extraction; returns HTTP 503 until its mode-specific model is trained
 - `GET /api/assessments/<id>/report.pdf` - Download official PDF research assessment report (authenticated)
 - `GET /api/history/assessments` - List user assessments (authenticated)
 - `GET /api/history/completed` - List completed assessments (authenticated)
@@ -112,8 +112,8 @@ This tunes SVM and Random Forest separately for speech, handwriting, and tremor 
 - **Authentication**: Registration, login, logout with signed token management and password show/hide controls
 - **Dashboard**: Assessment status cards for tremor, handwriting, and speech tests with direct action buttons
 - **Tremor Assessment**: Redesigned accessible discrete 0–4 segmented rating buttons with documented UPDRS III clinical item descriptions
-- **Handwriting Test**: Real-time HTML5 interactive drawing canvas with Archimedean spiral guide overlay capturing coordinate telemetry, tablet CSV upload, and video visual inspection
-- **Speech Test**: Standardized reading passage (v1.0), in-browser microphone recording via MediaRecorder, WAV audio upload, and feature schema contract notice
+- **Handwriting Test**: Real-time HTML5 canvas with an Archimedean spiral guide and local pointer telemetry (kinematics, stroke timing, and observed browser pressure/tilt). These pixel-based measures are only a prototype and are not sent to the digitizer-trained classifier.
+- **Speech Test**: Choose reading or sustained-vowel mode; audio is processed with a separate v2 schema and is not persisted. Classification stays unavailable until a matching raw-audio model is trained.
 - **Results & Fusion**: Late fusion probability blending across available modalities with contributing weights
 - **PDF Reporting**: Professional ReportLab downloadable PDF reports containing clinical ratings, kinematic metrics, methodology, and research disclaimers
 - **Visual Design**: Cohesive darker sage green palette (`#526B4A`, `#3E5438`, `#788B6A`, `#F6F5F0`, `#FFFFFF`, `#29352C`) with responsive cards and accessible controls
@@ -130,7 +130,7 @@ This tunes SVM and Random Forest separately for speech, handwriting, and tremor 
 - Frontend assessment workflow with status tracking
 
 ### Blocked/Prototype
-- **Speech prediction**: No verified raw-audio feature extractor matching the saved model schema
+- **Speech prediction**: Praat/SciPy extracts the separate 45-feature `speech_audio_v2` schema for WAV input. No model trained on that schema is present; no prediction is generated and recordings are not persisted. See `experiments/speech_audio_v2/README.md`.
 - **Handwriting prediction**: Camera video cannot provide tablet pressure/grip-angle features
 - **Tremor prediction**: Works from the seven clinician-rated UPDRS item inputs used in training; it does not infer ratings from self-report or video
 - **Severity estimation**: Not deployed due to poor regression performance (negative R²)
@@ -217,6 +217,7 @@ PROGRESS.md                   Implementation progress and blockers
 - [Architecture](docs/architecture.md) - System architecture diagram
 - [Project Overview](PROJECT.md) - Concise architecture and scope
 - [Full Report](PROJECT_REPORT.md) - Detailed system documentation
+- [Model Explanation](MODEL_EXPLANATION.md) - Plain-English viva guide to models, validation, fusion, and limitations
 - [API Reference](app_backend/API.md) - Backend API endpoints
 - [Feature Compatibility](app_backend/FEATURE_COMPATIBILITY.md) - Model input requirements
 - [Frontend README](frontend/README.md) - Frontend setup and usage

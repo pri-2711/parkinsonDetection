@@ -38,21 +38,33 @@ export const assessmentsApi = {
     return apiClient.post<{ outcome: any }>(`/api/assessments/${id}/spiral/predict`, { trajectory, input_mode: inputMode });
   },
 
-  async predictSpeech(id: number, metadata: Record<string, any> = {}): Promise<any> {
-    return apiClient.post(`/api/assessments/${id}/speech/predict`, metadata);
+  async saveCanvasObservation(id: number, samples: any[], canvasWidth: number, canvasHeight: number): Promise<{ assessment: Assessment; observation: any }> {
+    return apiClient.post(`/api/assessments/${id}/spiral/canvas/observe`, {
+      samples,
+      canvas_width: canvasWidth,
+      canvas_height: canvasHeight,
+    });
+  },
+
+  async predictSpeech(id: number, audio: Blob, filename: string, metadata: Record<string, string> = {}): Promise<any> {
+    const form = new FormData();
+    form.append('file', audio, filename);
+    Object.entries(metadata).forEach(([key, value]) => form.append(key, value));
+    return apiClient.postForm(`/api/assessments/${id}/speech/predict`, form);
+  },
+
+  async analyzeSpiralVideo(id: number, video: File): Promise<{ analysis: any }> {
+    const form = new FormData();
+    form.append('file', video, video.name);
+    return apiClient.postForm(`/api/assessments/${id}/spiral/video/analyze`, form);
+  },
+
+  async getSpiralVideoBlob(id: number, variant: 'annotated' | 'original' = 'annotated'): Promise<Blob> {
+    return apiClient.getBlob(`/api/assessments/${id}/spiral/video/${variant}`);
   },
 
   async downloadReportPdf(id: number): Promise<Blob> {
-    const token = apiClient.getToken();
-    const response = await fetch(`/api/assessments/${id}/report.pdf`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (!response.ok) {
-      throw new Error('Failed to download report PDF');
-    }
-    return response.blob();
+    return apiClient.getBlob(`/api/assessments/${id}/report.pdf`);
   },
 
   async listHistory(limit: number = 50): Promise<{ assessments: Assessment[] }> {

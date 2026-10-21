@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,9 +16,10 @@ class DatabaseAssessmentTests(unittest.TestCase):
             "TESTING": True,
             "DATABASE_PATH": str(Path(self.temp.name) / "test.db"),
             "UPLOAD_TEMP_DIR": self.temp.name,
-            "AUDIO_MAX_BYTES": 32 * 1024,
+            "AUDIO_MAX_BYTES": 512 * 1024,
             "SPIRAL_MAX_BYTES": 2 * 1024 * 1024,
             "MAX_CONTENT_LENGTH": 3 * 1024 * 1024,
+            "SPIRAL_MEDIA_DIR": str(Path(self.temp.name) / "private-media"),
             "APP_SECRET_KEY": "test_secret_key_12345",
             "SECRET_KEY": "test_secret_key_12345",
         })
@@ -202,32 +204,26 @@ class DatabaseAssessmentTests(unittest.TestCase):
 
     def test_handwriting_trajectory_prediction_and_fusion(self):
         from app_backend.services.auth import create_token, hash_password
-        import numpy as np
+        import pandas as pd
 
         self.app.extensions["db"] = self.db
         user = self.db.create_user("spiraluser", "spiral@example.com", hash_password("password123"))
         assessment = self.db.create_assessment(user["id"])
         token = create_token(user["id"], "test_secret_key_12345")
 
-        # Create valid synthetic spiral trajectory points
-        t = np.linspace(0, 8, 50)
-        points = [
-            {
-                "point_index": i,
-                "x": float(200 + 10 * ti * np.cos(ti)),
-                "y": float(200 + 10 * ti * np.sin(ti)),
-                "z": 0.0,
-                "pressure": 0.6,
-                "grip_angle": 45.0,
-                "timestamp": float(i * 20),
-                "test_id": 1,
-            }
-            for i, ti in enumerate(t)
-        ]
+        # Use an existing fully-measured source tablet trajectory, not invented
+        # browser-canvas pressure or grip-angle values.
+        source = pd.read_csv(Path(__file__).resolve().parents[2] / "cleaned_dataset" / "handwriting_clean.csv")
+        for _, group in source.groupby(["participant_id", "test_id"], sort=True):
+            if len(group) >= 15 and group[["x", "y", "z", "pressure", "grip_angle", "timestamp"]].notna().all().all():
+                points = group[["point_index", "x", "y", "z", "pressure", "grip_angle", "timestamp", "test_id"]].to_dict("records")
+                break
+        else:
+            self.fail("No complete training-compatible tablet trace was found")
 
         response = self.client.post(
             f"/api/assessments/{assessment['id']}/spiral/predict",
-            json={"trajectory": points, "input_mode": "canvas_drawing"},
+            json={"trajectory": points, "input_mode": "measured_tablet_telemetry"},
             headers={"Authorization": f"Bearer {token}"},
         )
         self.assertEqual(response.status_code, 200, response.get_json())
@@ -259,6 +255,204 @@ class DatabaseAssessmentTests(unittest.TestCase):
         )
         self.assertEqual(pdf_res.status_code, 200)
         self.assertTrue(pdf_res.data.startswith(b"%PDF"))
+
+    def test_spiral_rejects_canvas_points_without_measured_tablet_features(self):
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("canvasuser", "canvas@example.com", hash_password("password123"))
+        assessment = self.db.create_assessment(user["id"])
+        token = create_token(user["id"], "test_secret_key_12345")
+        points = [{"point_index": i, "x": float(i), "y": float(i * 2), "timestamp": i * 20} for i in range(20)]
+
+        response = self.client.post(
+            f"/api/assessments/{assessment['id']}/spiral/predict",
+            json={"trajectory": points, "input_mode": "canvas_coordinates_only"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["error"]["code"], "tablet_telemetry_required")
+        self.assertIn("cannot provide", response.get_json()["error"]["message"])
+
+    def test_canvas_observations_are_saved_without_a_classifier_prediction(self):
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("canvasobserve", "canvasobserve@example.com", hash_password("password123"))
+        assessment = self.db.create_assessment(user["id"])
+        token = create_token(user["id"], "test_secret_key_12345")
+        samples = [
+            {"x": 10, "y": 10, "timestampMs": 0, "phase": "down", "strokeId": 0,
+             "pressure": None, "pressureAvailable": False, "tiltX": None, "tiltY": None, "tiltAvailable": False},
+            {"x": 20, "y": 20, "timestampMs": 100, "phase": "move", "strokeId": 0,
+             "pressure": None, "pressureAvailable": False, "tiltX": None, "tiltY": None, "tiltAvailable": False},
+            {"x": 40, "y": 20, "timestampMs": 200, "phase": "up", "strokeId": 0,
+             "pressure": None, "pressureAvailable": False, "tiltX": None, "tiltY": None, "tiltAvailable": False},
+        ]
+        response = self.client.post(
+            f"/api/assessments/{assessment['id']}/spiral/canvas/observe",
+            json={"samples": samples, "canvas_width": 500, "canvas_height": 500},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        observation = response.get_json()["observation"]
+        self.assertEqual(observation["sample_count"], 3)
+        self.assertAlmostEqual(observation["path_length_px"], 34.142, places=2)
+        self.assertFalse(observation["model_compatible"])
+        saved = self.db.get_assessment(assessment["id"], user["id"])
+        self.assertEqual(saved["steps"]["spiral"]["status"], "unavailable")
+        self.assertEqual(saved["steps"]["spiral"]["outcome"]["canvas_telemetry"], observation)
+        self.assertNotIn("probability", saved["steps"]["spiral"]["outcome"])
+        history = self.client.get(
+            "/api/history/assessments?limit=50",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.get_json()["assessments"][0]["id"], assessment["id"])
+
+        invalid = self.client.post(
+            f"/api/assessments/{assessment['id']}/spiral/canvas/observe",
+            json={"samples": [{**samples[0], "x": 9000}, samples[1]], "canvas_width": 500, "canvas_height": 500},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(invalid.status_code, 422)
+
+    def test_spiral_video_analysis_stores_associated_playable_private_output(self):
+        import cv2
+        import numpy as np
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("videouser", "video@example.com", hash_password("password123"))
+        other = self.db.create_user("otheruser", "other@example.com", hash_password("password123"))
+        assessment = self.db.create_assessment(user["id"])
+        token = create_token(user["id"], "test_secret_key_12345")
+        other_token = create_token(other["id"], "test_secret_key_12345")
+        temp_video = Path(self.temp.name) / "synthetic.mp4"
+        writer = cv2.VideoWriter(str(temp_video), cv2.VideoWriter_fourcc(*"mp4v"), 12.0, (160, 120))
+        self.assertTrue(writer.isOpened(), "test environment must encode synthetic source video")
+        for i in range(36):
+            frame = np.full((120, 160, 3), 245, dtype=np.uint8)
+            x = 80 + int(10 * np.sin(i * 2.0))
+            cv2.circle(frame, (x, 60 + int(3 * np.sin(i * 2.0))), 5, (20, 20, 20), -1)
+            writer.write(frame)
+        writer.release()
+        video_bytes = temp_video.read_bytes()
+
+        unauthenticated = self.client.post(
+            f"/api/assessments/{assessment['id']}/spiral/video/analyze",
+            data={"file": (io.BytesIO(video_bytes), "trace.mp4", "video/mp4")},
+        )
+        self.assertEqual(unauthenticated.status_code, 401)
+        response = self.client.post(
+            f"/api/assessments/{assessment['id']}/spiral/video/analyze",
+            data={"file": (io.BytesIO(video_bytes), "trace.mp4", "video/mp4")},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        analysis = response.get_json()["analysis"]
+        self.assertEqual(analysis["analysis_type"], "opencv_visual_baseline_not_a_diagnosis")
+        self.assertEqual(analysis["video"]["frame_count"], 36)
+        self.assertGreater(analysis["trajectory"]["tracked_points"], 10)
+        self.assertIsNotNone(analysis["trajectory"].get("path_length_px"))
+        self.assertGreater(len(analysis["candidate_movement_events"]), 0)
+        saved = self.db.get_assessment(assessment["id"], user["id"])
+        sidecar = saved["steps"]["spiral"]["outcome"]["video_analysis"]
+        self.assertEqual(sidecar["video_id"], analysis["video_id"])
+        self.assertEqual(saved["steps"]["spiral"]["status"], "unavailable")
+        self.assertEqual(saved["steps"]["spiral"]["outcome"]["prediction_status"], "unavailable")
+
+        annotated = self.client.get(sidecar["annotated_video_url"], headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(annotated.status_code, 200)
+        self.assertEqual(annotated.content_type, "video/mp4")
+        decoded_path = Path(self.temp.name) / "returned.mp4"
+        decoded_path.write_bytes(annotated.data)
+        cap = cv2.VideoCapture(str(decoded_path))
+        ok, frame = cap.read()
+        self.assertTrue(ok)
+        self.assertIsNotNone(frame)
+        self.assertGreater(cap.get(cv2.CAP_PROP_FRAME_COUNT), 0)
+        cap.release()
+
+        original = self.client.get(sidecar["original_video_url"], headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(original.data, video_bytes)
+        forbidden = self.client.get(sidecar["annotated_video_url"], headers={"Authorization": f"Bearer {other_token}"})
+        self.assertEqual(forbidden.status_code, 404)
+        report = self.client.get(
+            f"/api/assessments/{assessment['id']}/report.pdf", headers={"Authorization": f"Bearer {token}"}
+        )
+        self.assertEqual(report.status_code, 200)
+        self.assertTrue(report.data.startswith(b"%PDF"))
+
+    def test_spiral_video_rejects_corrupt_oversized_and_bad_extension(self):
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("videovalid", "videovalid@example.com", hash_password("password123"))
+        assessment = self.db.create_assessment(user["id"])
+        token = create_token(user["id"], "test_secret_key_12345")
+        headers = {"Authorization": f"Bearer {token}"}
+        def submit(data: bytes, name: str, mime: str):
+            return self.client.post(f"/api/assessments/{assessment['id']}/spiral/video/analyze",
+                                    data={"file": (io.BytesIO(data), name, mime)}, headers=headers)
+        corrupt = submit(b"not a video", "broken.mp4", "video/mp4")
+        self.assertEqual(corrupt.status_code, 400)
+        oversized = submit(b"x" * (2 * 1024 * 1024 + 1), "large.mp4", "video/mp4")
+        self.assertEqual(oversized.status_code, 413)
+        extension = submit(b"whatever", "not-video.txt", "text/plain")
+        self.assertEqual(extension.status_code, 415)
+
+    def test_spiral_video_processing_failure_returns_clear_error(self):
+        import cv2
+        import numpy as np
+        from unittest.mock import patch
+        from app_backend.errors import APIError
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("videofail", "videofail@example.com", hash_password("password123"))
+        assessment = self.db.create_assessment(user["id"])
+        token = create_token(user["id"], "test_secret_key_12345")
+        path = Path(self.temp.name) / "failure.mp4"
+        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (80, 80))
+        self.assertTrue(writer.isOpened())
+        for _ in range(10):
+            writer.write(np.full((80, 80, 3), 255, dtype=np.uint8))
+        writer.release()
+        with patch("app_backend.routes.assessment.analyze_spiral_video", side_effect=APIError(422, "video_processing_failed", "Synthetic processing failure.")):
+            response = self.client.post(
+                f"/api/assessments/{assessment['id']}/spiral/video/analyze",
+                data={"file": (io.BytesIO(path.read_bytes()), "failure.mp4", "video/mp4")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["error"]["code"], "video_processing_failed")
+
+    def test_speech_assessment_extracts_audio_then_reports_missing_v2_model(self):
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("speechuser", "speech@example.com", hash_password("password123"))
+        assessment = self.db.create_assessment(user["id"])
+        token = create_token(user["id"], "test_secret_key_12345")
+        from app_backend.tests.test_backend import make_voiced_wav
+        response = self.client.post(
+            f"/api/assessments/{assessment['id']}/speech/predict",
+            data={"mode": "sustained_vowel", "gender_code": "0",
+                  "file": (io.BytesIO(make_voiced_wav()), "sample.wav", "audio/wav")},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()["status"], "unavailable")
+        outcome = self.db.get_assessment(assessment["id"], user["id"])["steps"]["speech"]["outcome"]
+        self.assertTrue(outcome["audio_received"])
+        self.assertFalse(outcome["audio_stored"])
+        self.assertEqual(outcome["feature_extraction"], "completed")
+        self.assertEqual(outcome["feature_schema"], "speech_audio_v2")
+        self.assertEqual(outcome["feature_count"], 45)
+        self.assertEqual(len(outcome["feature_values"]), 45)
+        self.assertEqual(self.db.get_assessment(assessment["id"], user["id"])["steps"]["speech"]["status"], "unavailable")
+        self.assertIsNone(outcome.get("probability"))
 
     def test_root_and_api_discovery_routes(self):
         for path in ("/", "/api"):

@@ -10,7 +10,13 @@ export function Results() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [loadingVideo, setLoadingVideo] = useState(false);
+  const [annotatedVideoUrl, setAnnotatedVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  useEffect(() => () => {
+    if (annotatedVideoUrl) URL.revokeObjectURL(annotatedVideoUrl);
+  }, [annotatedVideoUrl]);
 
   useEffect(() => {
     loadResults();
@@ -18,11 +24,12 @@ export function Results() {
 
   const loadResults = async () => {
     if (!id) return;
+    setLoading(true);
     try {
       const data = await assessmentsApi.get(parseInt(id, 10));
       setAssessment(data);
     } catch (err) {
-      setError('Failed to load assessment results');
+      setError(err instanceof Error ? err.message : 'Failed to load assessment results');
     } finally {
       setLoading(false);
     }
@@ -60,6 +67,20 @@ export function Results() {
       setError(err instanceof Error ? err.message : 'Failed to generate PDF report');
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleViewVideo = async () => {
+    if (!id) return;
+    setLoadingVideo(true);
+    setError('');
+    try {
+      const blob = await assessmentsApi.getSpiralVideoBlob(Number(id), 'annotated');
+      setAnnotatedVideoUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not retrieve the authenticated annotated video.');
+    } finally {
+      setLoadingVideo(false);
     }
   };
 
@@ -102,7 +123,7 @@ export function Results() {
           <div style={{ backgroundColor: 'var(--success-bg)', border: '1px solid var(--success)', padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Decision-Level Late Fusion Result
+                {fusion.aggregation_type === 'single_modality_probability' ? 'Single Available Modality Result' : 'AUC-Weighted Decision-Level Aggregate'}
               </span>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-light)' }}>
                 Weights: {fusion.available_modalities.map((m: string) => `${m}: ${(fusion.effective_weights[m] * 100).toFixed(0)}%`).join(', ')}
@@ -112,18 +133,18 @@ export function Results() {
               Model Prediction: <strong>{fusion.prediction === 1 ? "Parkinson's Class Indicator" : 'Control Class Indicator'}</strong>
             </h3>
             <p style={{ fontSize: '1.1rem', color: 'var(--sage-dark)', fontWeight: '600', marginBottom: '0.75rem' }}>
-              Composite Probability: {(fusion.probability * 100).toFixed(1)}% (Threshold: 0.50)
+              {fusion.aggregation_type === 'single_modality_probability' ? 'Classifier probability' : 'Weighted score (not patient-level calibrated probability)'}: {(fusion.probability * 100).toFixed(1)}% (Threshold: {(fusion.threshold ?? 0.5).toFixed(2)})
             </p>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', lineHeight: '1.4', margin: 0 }}>
-              <em>Academic Disclaimer:</em> Combined using validation-fold AUC weights. Because benchmark modality cohorts are collected from distinct participant groups, composite scores reflect decision-level ensemble aggregation rather than verified patient-level multimodal accuracy.
+              <em>Interpretation:</em> {fusion.score_interpretation || 'Research output only; patient-level multimodal performance has not been measured.'} Included modalities: {fusion.available_modalities.join(', ')}. Unavailable or omitted: {(fusion.missing_modalities || []).join(', ') || 'none'}.
             </p>
           </div>
         ) : (
           <div style={{ backgroundColor: '#FAFAF7', border: '1px solid var(--border-subtle)', padding: '1.25rem', borderRadius: '8px', marginBottom: '2rem' }}>
             <p style={{ color: 'var(--text-dark)', fontSize: '0.95rem', margin: 0 }}>
               {hasVerifiedPrediction
-                ? 'Individual modality tests completed. Finalize assessment below to compute late fusion and download your official research PDF report.'
-                : 'Complete at least one assessment test (Tremor or Handwriting) to compute verified model probabilities.'}
+                ? 'Verified modality predictions are saved. Finalize to aggregate only those predictions; unavailable modalities will be omitted and their configured weights renormalized.'
+                : 'No compatible trained-model prediction is saved yet. Available extracted features and experimental video observations remain visible below; they are not fused.'}
             </p>
           </div>
         )}
@@ -151,11 +172,14 @@ export function Results() {
                   Model: Calibrated RBF SVM (C=1.0, gamma=0.1) | Features: 7 UPDRS III items (Items 20 & 21) | Test AUC: 0.8997
                 </p>
               </div>
+            ) : steps.tremor.error ? (
+              <p style={{ color: 'var(--warning)', fontSize: '0.85rem', margin: 0 }}>{steps.tremor.error}</p>
             ) : (
               <p style={{ color: 'var(--text-light)', fontSize: '0.85rem', margin: 0 }}>
                 Not submitted yet. Enter 7 UPDRS items to run classifier.
               </p>
             )}
+            {steps.tremor.outcome?.input_features && <details style={{ marginTop: '0.75rem' }}><summary>Saved UPDRS inputs</summary><dl>{Object.entries(steps.tremor.outcome.input_features).map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{String(value)}</dd></div>)}</dl></details>}
           </div>
 
           {/* Handwriting / Spiral Step Result */}
@@ -181,9 +205,30 @@ export function Results() {
               </p>
             ) : (
               <p style={{ color: 'var(--text-light)', fontSize: '0.85rem', margin: 0 }}>
-                Not submitted yet. Draw spiral on canvas or upload tablet telemetry.
+                No compatible digitizer classifier prediction is saved. Canvas observations and video analysis are shown separately when available.
               </p>
             )}
+            {steps.spiral.outcome?.canvas_telemetry && (() => {
+              const canvas = steps.spiral.outcome.canvas_telemetry;
+              return <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#F4F7F2', borderRadius: 6 }}>
+                <strong>Saved browser-canvas observations (experimental, not classifier-compatible)</strong>
+                <p>{canvas.sample_count} samples · {canvas.stroke_count} stroke(s) · {canvas.path_length_px} px path · {canvas.duration_ms} ms</p>
+                <p>Mean speed: {canvas.mean_speed_px_per_second ?? 'unavailable'} px/s · acceleration: {canvas.mean_acceleration_px_per_second2 ?? 'unavailable'} · jerk: {canvas.mean_jerk_px_per_second3 ?? 'unavailable'} · browser pressure samples: {canvas.pressure_samples}</p>
+                <details><summary>Feature coverage and limitations</summary><ul>{canvas.limitations.map((item: string) => <li key={item}>{item}</li>)}</ul></details>
+              </div>;
+            })()}
+            {steps.spiral.outcome?.video_analysis && (() => {
+              const video = steps.spiral.outcome.video_analysis;
+              return <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#F1F5F8', borderRadius: 6 }}>
+                <strong>Spiral video observations ({video.status})</strong>
+                {video.trajectory && <p>Tracked candidates: {video.trajectory.tracked_points} · visible-change path: {video.trajectory.path_length_px ?? 'insufficient tracking'} px · mean speed: {video.trajectory.mean_speed_px_per_second ?? 'unavailable'} px/s</p>}
+                <p>Red movement candidates: {video.candidate_movement_events?.length ?? 0} · blue visible-appearance observations: {video.visible_appearance_events?.length ?? 0}</p>
+                {video.error?.message && <p role="alert">{video.error.message}</p>}
+                {video.status === 'completed' && <button type="button" className="btn btn-secondary" onClick={handleViewVideo} disabled={loadingVideo}>{loadingVideo ? 'Loading annotated video…' : 'View Annotated Video'}</button>}
+                {annotatedVideoUrl && <video controls preload="metadata" src={annotatedVideoUrl} style={{ display: 'block', width: '100%', maxHeight: 400, marginTop: '0.75rem', background: '#111' }}>Video playback is unavailable in this browser.</video>}
+                <details><summary>Video-analysis limitations</summary><ul>{(video.limitations || []).map((item: string) => <li key={item}>{item}</li>)}</ul></details>
+              </div>;
+            })()}
           </div>
 
           {/* Speech Step Result */}
@@ -205,15 +250,17 @@ export function Results() {
                 <p style={{ color: 'var(--warning)', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
                   {steps.speech.error}
                 </p>
-                <p style={{ color: 'var(--text-light)', fontSize: '0.8rem', margin: 0 }}>
-                  Reading passage recorded & logged (v1.0). Live prediction awaits pipeline extraction of all 45 acoustic features.
-                </p>
               </div>
             ) : (
               <p style={{ color: 'var(--text-light)', fontSize: '0.85rem', margin: 0 }}>
                 Not submitted yet.
               </p>
             )}
+            {steps.speech.outcome?.feature_values && <div style={{ marginTop: '0.75rem' }}>
+              <p>{steps.speech.outcome.feature_count} {steps.speech.outcome.feature_schema} features extracted from {steps.speech.outcome.recording_mode}. Audio was not retained.</p>
+              {steps.speech.outcome.prediction_status === 'unavailable' && <p role="status">Prediction unavailable: no compatible trained model exists for this audio feature schema and recording mode. The legacy 45-feature SVM was not used.</p>}
+              <details><summary>View saved speech features</summary><dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.4rem 1rem' }}>{Object.entries(steps.speech.outcome.feature_values).map(([name, value]) => <div key={name}><dt style={{ fontWeight: 600 }}>{name}</dt><dd style={{ margin: 0 }}>{typeof value === 'number' ? value.toPrecision(6) : String(value)}</dd></div>)}</dl></details>
+            </div>}
           </div>
         </div>
 

@@ -15,6 +15,7 @@ from app_backend.errors import APIError, register_error_handlers
 from app_backend.logging_utils import configure_logging
 from app_backend.models.registry import ModelRegistry
 from app_backend.services.sessions import AssessmentSessionStore
+from app_backend.services.speech_v2_model import SpeechV2Model
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -36,6 +37,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         ttl_seconds=app.config["SESSION_TTL_SECONDS"]
     )
     app.extensions["model_registry"] = ModelRegistry.from_config(app.config)
+    app.extensions["speech_audio_v2_models"] = {
+        mode: SpeechV2Model(app.config["SPEECH_AUDIO_V2_ARTIFACT_DIR"], mode)
+        for mode in ("sustained_vowel", "reading")
+    }
 
     from app_backend.routes.assessment import assessment_bp
     from app_backend.routes.auth import auth_bp

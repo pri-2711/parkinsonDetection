@@ -10,7 +10,7 @@ export interface AuthResponse {
 }
 
 export interface AssessmentStep {
-  status: 'pending' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'unavailable' | 'failed';
   outcome: {
     prediction?: number;
     probability?: number;
@@ -44,7 +44,11 @@ export interface Assessment {
       probability: number;
       prediction: number;
       available_modalities: string[];
+      missing_modalities?: string[];
       effective_weights: Record<string, number>;
+      aggregation_type?: string;
+      score_interpretation?: string;
+      threshold?: number;
     };
   } | null;
 }

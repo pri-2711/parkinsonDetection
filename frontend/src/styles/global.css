@@ -168,6 +168,11 @@ body {
   color: var(--text-dark);
 }
 
+.status-processing {
+  background-color: #EAF1F4;
+  color: #36566B;
+}
+
 .status-completed {
   background-color: var(--success-bg);
   color: var(--success);

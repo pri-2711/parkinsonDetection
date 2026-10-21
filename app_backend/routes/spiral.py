@@ -18,7 +18,9 @@ def spiral_status():
     return {
         "model_loaded": adapter.ready,
         "prediction_available": False,
+        "tablet_trajectory_prediction_available": adapter.ready,
         "blocker": "camera_to_tablet_feature_mapping_unvalidated",
+        "tablet_input_contract": "x/y/z, measured pressure, measured grip angle, and timestamp",
         "required_training_signals": [
             "x/y trajectory", "pen-up indicator", "pressure", "grip angle", "timestamp"
         ],
