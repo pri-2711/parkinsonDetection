@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { Assessment } from '../types/api';
+import type { Assessment, AssessmentSummary } from '../types/api';
 
 export const assessmentsApi = {
   async create(): Promise<Assessment> {
@@ -12,6 +12,10 @@ export const assessmentsApi = {
 
   async complete(id: number): Promise<Assessment> {
     return apiClient.post<Assessment>(`/api/assessments/${id}/complete`, {});
+  },
+
+  async getSummary(id: number): Promise<AssessmentSummary> {
+    return apiClient.get<AssessmentSummary>(`/api/assessments/${id}/summary`);
   },
 
   async getResults(id: number): Promise<Assessment['results']> {

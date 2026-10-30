@@ -120,32 +120,22 @@ Parkinson's disease (PD) is a neurodegenerative disorder that affects movement c
 
 ### Flask API (`app_backend/`)
 
-**Routes**:
-- `GET /`: API root discovery and service summary
-- `GET /api`: API status and modality overview
-- `GET /api/health`: Health check, model readiness, and diagnostic capability flags
-- `POST /api/auth/register`: User registration with password hashing
-- `POST /api/auth/login`: User login with signed HMAC-SHA256 token
-- `GET /api/auth/me`: Current user profile (authenticated)
-- `POST /api/speech/predict`: Speech upload validation and diagnostic response
-- `POST /api/spiral/predict`: Spiral/handwriting upload validation
-- `POST /api/tremor/submit`: Legacy prototype tremor input
-- `POST /api/assessments/<id>/tremor/predict`: Authenticated classifier inference from exact 7 UPDRS III items (0–4)
-- `POST /api/assessments/<id>/spiral/predict`: Authenticated handwriting classifier inference from complete measured tablet telemetry; canvas-only coordinates receive HTTP 422
-- `POST /api/assessments/<id>/speech/predict`: Authenticated speech reading passage logging and diagnostic 501 response
-- `GET /api/assessments/<id>/report.pdf`: Official downloadable PDF research assessment report
-- `POST /api/assessments`: Create authenticated assessment
-- `GET /api/assessments/<id>`: Get assessment details (authenticated, user-isolated)
-- `POST /api/assessments/<id>/complete`: Complete assessment and calculate decision-level late fusion
-- `GET /api/assessments/<id>/results`: Get assessment results and fusion details (authenticated)
-- `GET /api/history/assessments`: List user assessments (authenticated)
-- `GET /api/history/completed`: List completed assessments (authenticated)
-- `GET /api/history/assessments/<id>`: Get specific assessment (authenticated)
-- `GET /api/results/<id>`: Get assessment results (authenticated)
+**Routes** (generated from the Flask route map; `token` = requires `Authorization: Bearer`):
+- `GET /`, `GET /api`, `GET /api/health`: discovery and health (public)
+- `POST /api/auth/register`, `POST /api/auth/login` (public); `GET /api/auth/me`, `POST /api/auth/refresh` (token)
+- `POST /api/assessments` (create); `GET /api/assessments/<id>` (read); `POST /api/assessments/<id>/complete` (finalize, token)
+- `POST /api/assessments/<id>/tremor` and `/tremor/predict`: manual step and classifier from seven UPDRS item ratings (token)
+- `POST /api/assessments/<id>/spiral/predict`, `/spiral/canvas/observe`, `/spiral/video/analyze`; `GET /spiral/video/annotated|original` (token; owner-only)
+- `POST /api/assessments/<id>/speech` and `/speech/predict`: WAV upload, speech_audio_v2 extraction and experimental reading-model prediction (token)
+- `GET /api/assessments/<id>/summary`, `GET /api/assessments/<id>/results`, `GET /api/assessments/<id>/report.pdf` (token; owner-only)
+- `GET /api/history/assessments`, `GET /api/history/assessments/<id>`, `GET /api/history/completed`, `GET /api/results/<id>` (token)
+- `GET /api/research/insights`: saved experiment metrics and speech validation (token)
+- Legacy stateless endpoints, **public and not owner-scoped**: `POST /api/speech/predict`, `POST /api/spiral/predict`, `GET /api/spiral/status`, `POST /api/tremor/submit`, and the `/api/assessment/sessions/*` routes. They store nothing, but they should require login before any deployment (recommended future work).
 
 **Authentication**:
-- Passwords hashed with werkzeug PBKDF2
-- Signed tokens with HMAC-SHA256, 24-hour expiry
+- Passwords hashed with Werkzeug's default salted scrypt hash
+- Signed tokens with HMAC-SHA256, 24-hour expiry; `POST /api/auth/refresh` renews up to 7 days after login
+- Browser stores the token in sessionStorage (cleared when the tab closes) and checks its expiry locally
 - `login_required` decorator for protected routes
 - User-isolated data access via `g.user_id`
 
@@ -156,7 +146,7 @@ Parkinson's disease (PD) is a neurodegenerative disorder that affects movement c
 
 **Model Loading**:
 - Loads tuned artifacts from `experiments/regularized_svm_rf/results/artifacts/`
-- Models: `speech_svm_tuned.joblib`, `handwriting_svm_tuned.joblib`, `tremor_svm_tuned.joblib`
+- Models: `handwriting_svm_tuned.joblib`, `tremor_svm_tuned.joblib`, legacy `speech_svm_tuned.joblib` (baseline only), and experimental `experiments/speech_audio_v2/artifacts/reading.joblib`
 - ModelRegistry validates feature order and provides `predict()` interface
 
 ### Services (`app_backend/services/`)
@@ -168,7 +158,7 @@ Parkinson's disease (PD) is a neurodegenerative disorder that affects movement c
 - `pdf_report.py`: ReportLab PDF assessment report generation
 - `sessions.py`: Legacy in-memory session management (retained for compatibility)
 - `audio_preprocessing.py`: WAV validation
-- `acoustic_features.py`: Acoustic feature extractor interface with 501 diagnostic
+- `acoustic_features.py`: speech_audio_v2 extractor (Parselmouth/Praat and SciPy) and the 44-column model input list
 - `spiral_preprocessing.py`: Image/video validation
 - `trajectory_features.py`: Tablet feature extraction matching training schema
 - `tremor_placeholder.py`: Tremor input validation
@@ -217,18 +207,18 @@ Parkinson's disease (PD) is a neurodegenerative disorder that affects movement c
 ## Limitations
 
 ### ML Pipeline
-- **Small cohorts**: Only 40 handwriting participants, 80 speech participants, 130 tremor participants
+- **Small cohorts**: 40 handwriting participants (33 groups after duplicate-signature grouping), 37 speech participants in the reading model, 130 tremor participants
 - **Unmatched cohorts**: No participant appears in more than one modality; patient-level fusion not measured
 - **Handwriting duplicates**: 7-row control signature and 2-row PD signature shared across participants
 - **Regression performance**: Negative R² indicates telemonitoring model does not generalize to unseen subjects
 
 ### Backend
-- **Speech prediction blocked**: No verified raw-audio feature extractor matching the saved model schema (45 features including gender, MFCC, Delta definitions)
+- **Speech prediction (experimental)**: reading-passage model only, ROC-AUC 0.642 ± 0.144 on 37 public-dataset participants; close to the majority-class baseline; not clinically validated. Sustained-vowel prediction is unavailable.
 - **Handwriting prediction limited**: The model runs only on compatible measured tablet telemetry. Browser canvas and camera inputs do not provide the required sensor signals; the canvas no longer substitutes made-up pressure or grip-angle values.
 - **Tremor prediction**: Available only from the seven clinician-rated UPDRS III item 20/21 values; this research probability is not a clinical diagnosis
 - **Severity estimation**: Not deployed due to poor regression performance
 - **Assessment completion**: A tremor-only assessment can complete with valid model-generated tremor probability; speech and handwriting remain unavailable and are omitted from fusion.
-- **Authentication**: Basic JWT without refresh tokens or multi-factor auth
+- **Authentication**: Bearer tokens with a bounded refresh; no multi-factor authentication; public legacy endpoints listed in the route section
 
 ### General
 - The React/TypeScript frontend production build succeeds with the installed lockfile dependencies. `npm run lint` is currently blocked because the repository has no ESLint configuration.
@@ -286,6 +276,8 @@ python experiments/regularized_svm_rf/run_experiments.py
 ### Environment Variables (`.env`)
 - `HOST`, `PORT`: Server binding
 - `APP_SECRET_KEY`: JWT signing secret (required for auth)
+- `CORS_ORIGINS`: browser origins allowed to call the API (default: local Vite origins)
+- `DATABASE_PATH`, `SPEECH_AUDIO_V2_ARTIFACT_DIR`, `EXPERIMENT_RESULTS_DIR`: data and artifact locations
 - `LOG_LEVEL`: Logging verbosity
 - `MODEL_ARTIFACT_DIR`: Path to tuned model artifacts
 - `DATABASE_PATH`: SQLite database path
@@ -316,4 +308,4 @@ python experiments/regularized_svm_rf/run_experiments.py
 
 ## Conclusion
 
-This project provides a reproducible research prototype for Parkinson's disease classification and separate severity estimation. Its authenticated Flask workflow can run a genuine tremor classifier from the seven compatible clinician-rated UPDRS inputs, persist its probability, and complete a tremor-only assessment. Speech and camera-based handwriting inference remain blocked by feature incompatibilities, and severity is not deployed because grouped validation underperformed the baseline. The frontend production build and 31 Python tests pass; lint is blocked by missing ESLint configuration. The system is for research, not clinical diagnosis.
+This project provides a reproducible research prototype for Parkinson's disease classification and separate severity estimation. Its authenticated Flask workflow can run a genuine tremor classifier from the seven compatible clinician-rated UPDRS inputs, persist its probability, and complete a tremor-only assessment. A speech reading-passage model is available as an experimental, weakly validated output; sustained-vowel inference and camera-based handwriting inference remain unavailable, and severity is not deployed because grouped validation underperformed the baseline. At the last verification: 52 backend tests, 14 experiment and fusion tests, 8 frontend unit tests and the production build pass; lint is blocked by missing ESLint configuration. The system is for research, not clinical diagnosis.

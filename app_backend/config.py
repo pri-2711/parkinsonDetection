@@ -24,9 +24,8 @@ def load_repository_environment() -> None:
 
 load_repository_environment()
 
-DEFAULT_EXPERIMENT_ARTIFACTS = (
-    REPOSITORY_ROOT / "experiments" / "regularized_svm_rf" / "results" / "artifacts"
-)
+DEFAULT_EXPERIMENT_RESULTS = REPOSITORY_ROOT / "experiments" / "regularized_svm_rf" / "results"
+DEFAULT_EXPERIMENT_ARTIFACTS = DEFAULT_EXPERIMENT_RESULTS / "artifacts"
 DEFAULT_FUSION_WEIGHTS = (
     REPOSITORY_ROOT / "experiments" / "regularized_svm_rf" / "results" / "fusion_validation_weights.json"
 )
@@ -39,6 +38,18 @@ def _allowed_locations() -> tuple[str, ...]:
         "left_hand,right_hand,left_leg,right_leg,jaw,other",
     )
     return tuple(item.strip().lower() for item in raw.split(",") if item.strip())
+
+
+def _cors_origins() -> tuple[str, ...] | None:
+    """Explicit browser origins from CORS_ORIGINS (comma-separated). None means: allow loopback origins on any port."""
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    if not raw:
+        return None
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+# Vite picks the next free port (3000, 3001, ...) when one is busy, so local development allows any loopback port.
+LOOPBACK_ORIGIN_PATTERN = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 
 class BackendConfig:
@@ -57,6 +68,7 @@ class BackendConfig:
     )
     SPIRAL_MEDIA_DIR = os.getenv("SPIRAL_MEDIA_DIR") or str(REPOSITORY_ROOT / "data" / "spiral_media")
     MODEL_ARTIFACT_DIR = os.getenv("MODEL_ARTIFACT_DIR", str(DEFAULT_EXPERIMENT_ARTIFACTS))
+    EXPERIMENT_RESULTS_DIR = os.getenv("EXPERIMENT_RESULTS_DIR", str(DEFAULT_EXPERIMENT_RESULTS))
     SPEECH_MODEL_FILE = os.getenv("SPEECH_MODEL_FILE", "speech_svm_tuned.joblib")
     SPEECH_AUDIO_V2_ARTIFACT_DIR = os.getenv("SPEECH_AUDIO_V2_ARTIFACT_DIR", str(DEFAULT_SPEECH_AUDIO_V2_ARTIFACTS))
     HANDWRITING_MODEL_FILE = os.getenv("HANDWRITING_MODEL_FILE", "handwriting_svm_tuned.joblib")
@@ -65,5 +77,7 @@ class BackendConfig:
     DATABASE_PATH = os.getenv("DATABASE_PATH", str(REPOSITORY_ROOT / "data" / "parkinson_app.db"))
     SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", 3600))
     TREMOR_ALLOWED_LOCATIONS = _allowed_locations()
+    CORS_ORIGINS = _cors_origins()
+    TOKEN_REFRESH_WINDOW_SECONDS = int(os.getenv("TOKEN_REFRESH_WINDOW_SECONDS", 3600))
     TREMOR_MAX_INTENSITY = float(os.getenv("TREMOR_MAX_INTENSITY", 10.0))
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -8,9 +8,11 @@ import pandas as pd
 from app_backend.database import Database
 from app_backend.errors import APIError
 from app_backend.repositories.assessment_repository import AssessmentRepository
+from app_backend.services.assessment_summary import build_assessment_summary
 from app_backend.services.auth import login_required
 from app_backend.services.fusion_service import FusionService
 from app_backend.services.pdf_report import generate_assessment_pdf
+from app_backend.services.research_insights import build_research_insights
 from app_backend.services.sessions import AssessmentSessionStore
 from app_backend.services.trajectory_features import extract_tablet_trajectory_features
 from app_backend.services.audio_preprocessing import validate_wav
@@ -70,6 +72,7 @@ def create_assessment():
     repo = _get_assessment_repo()
     assessment = repo.create_assessment(g.user_id)
     return jsonify({
+        "id": assessment["id"],
         "assessment_id": assessment["id"],
         "user_id": assessment["user_id"],
         "status": assessment["status"],
@@ -158,6 +161,16 @@ def complete_assessment(assessment_id: int):
         "status": completed["status"],
         "completed_at": completed["completed_at"],
     }), 200
+
+
+@assessment_bp.get("/api/assessments/<int:assessment_id>/summary")
+@login_required
+def get_assessment_summary(assessment_id: int):
+    repo = _get_assessment_repo()
+    assessment = repo.get_assessment(assessment_id, g.user_id)
+    if not assessment:
+        raise APIError(404, "assessment_not_found", "Assessment not found.")
+    return jsonify(build_assessment_summary(assessment)), 200
 
 
 @assessment_bp.get("/api/assessments/<int:assessment_id>/results")
@@ -470,6 +483,7 @@ def analyze_spiral_video_step(assessment_id: int):
             "source_filename": source_name,
             "source_metadata": metadata,
             "video_id": video_id,
+            "annotated_extension": output_ext,
             "annotated_video_url": f"/api/assessments/{assessment_id}/spiral/video/annotated",
             "original_video_url": f"/api/assessments/{assessment_id}/spiral/video/original",
         }
@@ -506,11 +520,12 @@ def _associated_spiral_video(assessment_id: int, variant: str):
     video_id = video.get("video_id") if isinstance(video, dict) else None
     if not isinstance(video_id, str) or not re.fullmatch(r"[0-9a-f]{32}", video_id):
         raise APIError(404, "video_not_found", "No video is associated with this assessment.")
-    suffix = "annotated.mp4" if variant == "annotated" else f"original{Path(video.get('source_filename', '')).suffix.lower()}"
+    annotated_ext = video.get("annotated_extension") or "mp4"
+    suffix = f"annotated.{annotated_ext}" if variant == "annotated" else f"original{Path(video.get('source_filename', '')).suffix.lower()}"
     path = (Path(current_app.config["SPIRAL_MEDIA_DIR"]).resolve() / f"assessment_{assessment_id}" / f"{video_id}_{suffix}").resolve()
     if not path.is_file() or Path(current_app.config["SPIRAL_MEDIA_DIR"]).resolve() not in path.parents:
         raise APIError(404, "video_not_found", "The associated video file is not available.")
-    mime = "video/mp4" if variant == "annotated" else {
+    mime = {"webm": "video/webm", "mp4": "video/mp4"}.get(annotated_ext, "video/mp4") if variant == "annotated" else {
         ".mov": "video/quicktime", ".avi": "video/x-msvideo", ".webm": "video/webm", ".mp4": "video/mp4"
     }.get(path.suffix.lower(), "application/octet-stream")
     return send_file(path, mimetype=mime, as_attachment=False, conditional=True, max_age=0)
@@ -567,11 +582,18 @@ def predict_speech_step(assessment_id: int):
         }
         v2_model = current_app.extensions["speech_audio_v2_models"][mode]
         if not v2_model.ready:
-            error_message = (
-                "Speech features were extracted and saved under speech_audio_v2, but no trained model is available "
-                "for this recording mode. The incompatible legacy 45-feature SVM was not used."
-            )
-            outcome = {**base_outcome, "prediction_status": "unavailable"}
+            if v2_model.error_code == "speech_audio_v2_model_invalid":
+                error_message = (
+                    "Speech features were extracted and saved under speech_audio_v2, but the trained model file for this "
+                    "recording mode failed schema validation, so no prediction was made. The legacy 45-feature SVM was not used."
+                )
+            else:
+                error_message = (
+                    "Speech features were extracted and saved under speech_audio_v2, but no trained model exists for this "
+                    "recording mode yet. The legacy 45-feature SVM was not used."
+                )
+            outcome = {**base_outcome, "prediction_status": "unavailable",
+                       "blocker_code": v2_model.error_code or "speech_audio_v2_model_not_trained"}
             step_data = {"status": "unavailable", "outcome": outcome, "error": error_message,
                          "updated_at": assessment.get("updated_at")}
             updated = repo.update_assessment_step(assessment_id, g.user_id, "speech", step_data)
@@ -614,7 +636,15 @@ def download_assessment_pdf(assessment_id: int):
     if not assessment:
         raise APIError(404, "assessment_not_found", "Assessment not found.")
 
-    pdf_bytes = generate_assessment_pdf(assessment, {"id": g.user_id})
+    try:
+        insights = build_research_insights(
+            current_app.config["EXPERIMENT_RESULTS_DIR"],
+            current_app.config["MODEL_ARTIFACT_DIR"],
+            current_app.config["SPEECH_AUDIO_V2_ARTIFACT_DIR"],
+        )
+    except (OSError, ValueError, KeyError):
+        insights = None
+    pdf_bytes = generate_assessment_pdf(assessment, {"id": g.user_id}, insights)
     return Response(
         pdf_bytes,
         mimetype="application/pdf",

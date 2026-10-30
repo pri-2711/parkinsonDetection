@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { assessmentsApi } from '../api/assessments';
 import type { Assessment } from '../types/api';
+import { Icon } from '../components/Icon';
 
 export function History() {
   const navigate = useNavigate();
@@ -173,7 +174,7 @@ export function History() {
                 onClick={() => handleDownloadPdf(assessment.id)}
                 disabled={downloadingId === assessment.id}
               >
-                {downloadingId === assessment.id ? 'Generating…' : '📄 Download PDF Report'}
+                {downloadingId === assessment.id ? 'Generating…' : <><Icon name="download" />Download PDF Report</>}
               </button>
             </div>
           </div>

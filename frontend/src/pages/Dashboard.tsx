@@ -1,8 +1,53 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { assessmentsApi } from '../api/assessments';
-import { StatusCard } from '../components/StatusCard';
-import type { Assessment } from '../types/api';
+import type { Assessment, AssessmentStep } from '../types/api';
+
+type Modality = 'tremor' | 'spiral' | 'speech';
+
+// What each step actually did. Saved observations and experimental results are not classifier predictions.
+function stepLabel(modality: Modality, step: AssessmentStep | undefined): { text: string; tone: string } {
+  const status = step?.status ?? 'pending';
+  if (status === 'failed') return { text: 'Needs Attention', tone: 'failed' };
+  if (status === 'processing') return { text: 'Processing', tone: 'processing' };
+  if (status === 'completed') {
+    if (modality === 'speech') return { text: 'Experimental Result', tone: 'completed' };
+    if (modality === 'spiral' && step?.outcome?.probability == null) return { text: 'Observations Saved', tone: 'unavailable' };
+    return { text: 'Completed', tone: 'completed' };
+  }
+  if (status === 'unavailable') return { text: 'Observations Saved', tone: 'unavailable' };
+  return { text: 'Pending', tone: 'pending' };
+}
+
+interface ModalityCardProps {
+  title: string;
+  description: string;
+  modality: Modality;
+  step: AssessmentStep | undefined;
+  onOpen: () => void;
+}
+
+function ModalityCard({ title, description, modality, step, onOpen }: ModalityCardProps) {
+  const label = stepLabel(modality, step);
+  return (
+    <article
+      className="card modality-card"
+      role="button"
+      tabIndex={0}
+      aria-label={`${title}: ${label.text}. Open assessment.`}
+      onClick={onOpen}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } }}
+      style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem', padding: '1.4rem', minHeight: 230, height: '100%' }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.6rem' }}>
+        <h2 style={{ color: 'var(--sage-dark)', fontSize: '1.1rem', margin: 0 }}>{title}</h2>
+        <span className={`status-badge status-${label.tone}`}>{label.text}</span>
+      </div>
+      <p style={{ color: 'var(--text-light)', fontSize: '0.92rem', margin: 0, flex: 1 }}>{description}</p>
+      <span style={{ color: 'var(--sage-dark)', fontWeight: 600, fontSize: '0.9rem' }}>Open assessment →</span>
+    </article>
+  );
+}
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -48,90 +93,68 @@ export function Dashboard() {
     }
   };
 
-  const getStepStatus = (step: 'speech' | 'spiral' | 'tremor') => {
-    if (!assessment) return 'pending';
-    return assessment.steps[step].status;
-  };
-
-  const hasAnyActivity = assessment && Object.values(assessment.steps).some(
-    (step) => step.status !== 'pending' || step.outcome !== null,
-  );
-
   if (loading) return <div className="loading"><p>Loading dashboard…</p></div>;
 
+  const steps = assessment?.steps;
+  const processed = (step: AssessmentStep | undefined) => step?.status === 'completed' || step?.status === 'unavailable';
+  const anyPrediction = Object.values(steps ?? {}).some((step) => step?.status === 'completed' && step?.outcome?.model_verified);
+  const allProcessed = !!steps && processed(steps.tremor) && processed(steps.spiral) && processed(steps.speech);
+  const finalized = assessment?.status === 'completed';
+  const readyToFinalize = !finalized && allProcessed && anyPrediction;
+
   return (
-    <div className="container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
-        <div>
-          <h1 style={{ color: 'var(--sage-dark)', fontSize: '1.85rem', marginBottom: '0.4rem' }}>
-            Assessment Dashboard
-          </h1>
-          <p style={{ color: 'var(--text-light)', fontSize: '0.95rem' }}>
-            Research evaluation suite. Complete assessments in any order. Outputs represent experimental classifier probabilities.
+    <div className="container" style={{ maxWidth: 1040 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+        <div style={{ maxWidth: 640 }}>
+          <h1 style={{ color: 'var(--sage-dark)', fontSize: '1.7rem', margin: '0 0 0.35rem' }}>Assessment Dashboard</h1>
+          <p style={{ color: 'var(--text-light)', fontSize: '0.95rem', margin: 0 }}>
+            Record tremor ratings, a spiral drawing and a speech sample for one participant, then review the results together.
           </p>
         </div>
-        <button
-          className="btn btn-secondary"
-          onClick={handleStartNew}
-          disabled={creating}
-          style={{ whiteSpace: 'nowrap' }}
-        >
-          {creating ? 'Starting…' : '+ Start New Assessment'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {finalized && <span className="status-badge status-completed">Finalized</span>}
+          {readyToFinalize && <span className="status-badge status-processing">Ready to Finalize</span>}
+          <button className="btn btn-secondary" onClick={handleStartNew} disabled={creating} style={{ whiteSpace: 'nowrap' }}>
+            {creating ? 'Starting…' : 'Start new assessment'}
+          </button>
+        </div>
       </div>
 
-      {error && <div role="alert" style={{ backgroundColor: 'var(--error-bg)', border: '1px solid var(--error)', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.5rem' }}>{error}</div>}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-        <StatusCard
-          title="Tremor Assessment"
-          status={getStepStatus('tremor')}
-          description={
-            assessment?.steps.tremor.status === 'completed'
-              ? 'Completed — 7 UPDRS III motor items classified with calibrated RBF SVM.'
-              : 'Enter seven clinician-rated UPDRS III tremor items (0–4) for calibrated model classification.'
-          }
-          onClick={() => assessment && navigate(`/tremor/${assessment.id}`)}
-        />
-
-        <StatusCard
-          title="Handwriting / Spiral Test"
-          status={getStepStatus('spiral')}
-          description={
-            assessment?.steps.spiral.status === 'completed'
-              ? 'Completed — compatible tablet telemetry was classified with the calibrated RBF SVM.'
-              : assessment?.steps.spiral.status === 'unavailable'
-              ? 'Canvas observations and/or experimental video analysis are saved; these are not compatible with the digitizer classifier.'
-              : 'Draw to save browser telemetry, or upload a separate video for experimental visual observations. Neither invents digitizer measurements.'
-          }
-          onClick={() => assessment && navigate(`/handwriting/${assessment.id}`)}
-        />
-
-        <StatusCard
-          title="Speech Assessment"
-          status={getStepStatus('speech')}
-          description={
-            assessment?.steps.speech.status === 'completed'
-              ? 'Completed with a compatible trained classifier.'
-              : assessment?.steps.speech.status === 'unavailable'
-              ? `${assessment.steps.speech.outcome?.feature_count ?? 0} experimental speech features saved; no compatible classifier is trained for this mode.`
-              : assessment?.steps.speech.status === 'failed'
-              ? `Audio processing failed: ${assessment.steps.speech.error || 'review this step and try again.'}`
-              : 'Record or upload a WAV. Features use speech_audio_v2; prediction needs a separately trained compatible model.'
-          }
-          onClick={() => assessment && navigate(`/speech/${assessment.id}`)}
-        />
-      </div>
+      {error && <div role="alert" className="error" style={{ marginBottom: '1.25rem' }}>{error}</div>}
 
       {assessment && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-          <button
-            className="btn btn-primary"
-            style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}
-            onClick={() => navigate(`/results/${assessment.id}`)}
-            disabled={!hasAnyActivity}
-          >
-            {hasAnyActivity ? 'View Assessment Results & Status' : 'Submit or review a modality to view results'}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: '1.1rem', marginBottom: '1.75rem' }}>
+          <ModalityCard
+            title="Tremor Assessment"
+            description="Seven UPDRS III ratings from items 20 and 21: rest tremor in the head and limbs, and action or postural tremor in the arms. A clinician provides the ratings, which the tremor classifier then uses."
+            modality="tremor"
+            step={steps?.tremor}
+            onOpen={() => navigate(`/tremor/${assessment.id}`)}
+          />
+          <ModalityCard
+            title="Handwriting & Spiral Assessment"
+            description="Draw a spiral on screen or upload a video of spiral writing, and the app examines writing patterns and visual features. Only calibrated tablet measurements feed the handwriting classifier; screen and video results are experimental observations."
+            modality="spiral"
+            step={steps?.spiral}
+            onOpen={() => navigate(`/handwriting/${assessment.id}`)}
+          />
+          <ModalityCard
+            title="Speech Assessment"
+            description="Record or upload a reading of the passage. The app analyses voice stability, pitch and speech variation. The reading-passage model is experimental and not validated for clinical use."
+            modality="speech"
+            step={steps?.speech}
+            onOpen={() => navigate(`/speech/${assessment.id}`)}
+          />
+        </div>
+      )}
+
+      {assessment && (
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <button className="btn btn-primary" style={{ padding: '0.8rem 1.75rem' }} onClick={() => navigate(`/results/${assessment.id}`)}>
+            {finalized ? 'View results' : readyToFinalize ? 'Review and finalize' : 'View results'}
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate('/research')} style={{ padding: '0.8rem 1.25rem' }}>
+            Research &amp; Insights
           </button>
         </div>
       )}

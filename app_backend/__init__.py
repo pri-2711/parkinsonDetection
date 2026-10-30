@@ -30,7 +30,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config.update(test_config)
     app.config["SECRET_KEY"] = app.config.get("APP_SECRET_KEY") or app.config.get("SECRET_KEY")
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    import re
+    from app_backend.config import LOOPBACK_ORIGIN_PATTERN
+    allowed_origins = list(app.config["CORS_ORIGINS"]) if app.config.get("CORS_ORIGINS") else [re.compile(LOOPBACK_ORIGIN_PATTERN)]
+    CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=False)
 
     configure_logging(app.config.get("LOG_LEVEL", "INFO"))
     app.extensions["assessment_sessions"] = AssessmentSessionStore(
@@ -46,12 +49,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     from app_backend.routes.auth import auth_bp
     from app_backend.routes.health import health_bp
     from app_backend.routes.history import history_bp
+    from app_backend.routes.research import research_bp
     from app_backend.routes.results import results_bp
     from app_backend.routes.speech import speech_bp
     from app_backend.routes.spiral import spiral_bp
     from app_backend.routes.tremor import tremor_bp
 
-    for blueprint in (health_bp, speech_bp, spiral_bp, tremor_bp, assessment_bp, auth_bp, history_bp, results_bp):
+    for blueprint in (health_bp, speech_bp, spiral_bp, tremor_bp, assessment_bp, auth_bp, history_bp, results_bp, research_bp):
         app.register_blueprint(blueprint)
 
     @app.before_request

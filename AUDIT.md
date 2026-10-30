@@ -20,7 +20,8 @@ This audit assesses the state of the final-year CSE research project investigati
 | **Tremor Classification** | Working | Fully Integrated | `tremor_svm_tuned.joblib` | Requires clinician or standardized 0–4 UPDRS ratings. |
 | **Handwriting (Tablet Trajectory)** | Partially Functional | Fully Integrated | `handwriting_svm_tuned.joblib` | Requires coordinate telemetry; ordinary camera cannot directly measure pressure/grip angle. Interactive canvas & CSV trajectory supported. |
 | **Handwriting (Camera/Video)** | Blocked | Experimental CV Inspection | OpenCV video processor | Video cannot measure tablet pressure/grip angle; visual path irregularity and tremor oscillations are visual proxies only. |
-| **Speech Classification** | Blocked | Audio Validation & Diagnostic | `speech_svm_tuned.joblib` | Model expects 45 precomputed acoustic features (jitter, shimmer, HNR, RPDE, DFA, PPE, gender). No verified raw-audio extractor exists in the repo matching this schema. |
+| **Speech (reading passage)** | Experimental | Live prediction, labelled as experimental | `experiments/speech_audio_v2/artifacts/reading.joblib` | Trained on 37 public MDVR-KCL participants (21 control, 16 PD) with nested subject-disjoint CV. ROC-AUC 0.642 ± 0.144 against a majority-class baseline of 0.605. Not clinically validated; not tested on app recordings. Sustained-vowel mode has no model. |
+| **Speech (legacy 45-feature SVM)** | Baseline only | Not used live | `speech_svm_tuned.joblib` | Precomputed UCI descriptors. Cannot be reproduced from audio and is never applied to speech_audio_v2 features. |
 | **Telemonitoring Regression** | Non-generalizable | Disabled / Experimental | `telemonitoring_regressors.joblib` | Negative R² (-0.250 Ridge, -0.466 RF) under participant-independent GroupKFold cross-validation; worse than group mean. |
 | **Decision-Level Fusion** | Validated | Fully Integrated | `fusion_validation_weights.json` | Weights (Speech: 0.3501, Handwriting: 0.3367, Tremor: 0.3132) estimated on reserved fold 1. Patient cohorts are unmatched; patient-level multimodal accuracy is not claimed. |
 | **Authentication & DB** | Working | Fully Integrated | `data/parkinson_app.db` | Custom HMAC-SHA256 JWT auth, user ownership isolation, SQLite persistence. |
@@ -31,7 +32,7 @@ This audit assesses the state of the final-year CSE research project investigati
 ## 3. Detailed Audit of Classification Modalities
 
 ### 3.1 Speech Classification
-- **Dataset:** `cleaned_dataset/speech_clean.csv` (1,040 rows from 80 subjects: 40 PD, 40 Control).
+- **Dataset (legacy):** `cleaned_dataset/speech_clean.csv` has 240 rows from 80 participants (120 PD and 120 control rows). An earlier version of this audit stated 1,040 rows; that figure was incorrect.
 - **Features:** 45 features including `gender`, `jitter_rel`, `jitter_abs`, `jitter_rap`, `jitter_ppq`, `shim_loc`, `shim_db`, `shim_apq3`, `shim_apq5`, `shi_apq11`, etc.
 - **Trained Model:** `experiments/regularized_svm_rf/results/artifacts/speech_svm_tuned.joblib` (Calibrated RBF SVM, $C=1.0$, $\gamma=0.01$).
 - **Verified Metrics (Outer Folds 2–5):**
@@ -41,7 +42,9 @@ This audit assesses the state of the final-year CSE research project investigati
   - F1-Score: $0.7527 \pm 0.0326$
   - ROC-AUC: $0.8238 \pm 0.0321$
 - **Backend Integration:** Model loads successfully via `ModelAdapter`. Accepts 45 precomputed tabular features.
-- **Blocker:** Incoming WAV files cannot be converted to the exact 45 features because training used precomputed tabular values without publishing the raw-audio extraction code. Live inference returns HTTP 501 `raw_audio_feature_extractor_unavailable` rather than faking outputs.
+- **Legacy blocker (still applies):** the UCI table has no raw audio, so its 45 columns cannot be verified against any extractor. The legacy model is never called with speech_audio_v2 values.
+- **Current speech model (`speech_audio_v2`, reading mode):** trained with `experiments/speech_audio_v2/train.py` on segments prepared by `prepare_mdvr.py` from the public MDVR-KCL ReadText recordings (CC-BY-4.0). Validation is StratifiedGroupKFold by subject (5 folds), with feature selection, scaling, hyperparameter search and sigmoid calibration inside each training fold. Gender is excluded from the model because the cohort has no sex metadata. Outer-fold ROC-AUC is 0.642 ± 0.144 (SVM, deployed) and 0.657 ± 0.090 (random forest, comparison); the majority-class accuracy is 0.605. The fold-to-fold spread is large, and the result is an experimental research score, not a clinical validation. The earlier fixed-configuration recomputation gave about 0.73; the trainer's per-fold tuned result is the reported baseline, and the discrepancy is attributed to unstable per-fold hyperparameter selection (not confirmed).
+- **Sustained-vowel mode:** no training data; prediction returns 'unavailable'.
 
 ### 3.2 Handwriting / Spiral Classification
 - **Dataset:** `cleaned_dataset/handwriting_clean.csv` (PaHaW tablet drawing telemetry, 75 subjects).
@@ -115,7 +118,7 @@ This audit assesses the state of the final-year CSE research project investigati
 
 - **Framework:** Flask with application factory (`create_app`).
 - **Database:** SQLite (`data/parkinson_app.db`) with `users` (22 registered accounts preserved) and `assessments` tables.
-- **Authentication:** Custom HMAC-SHA256 token verification; passwords hashed using standard salted key derivation.
+- **Authentication:** HMAC-SHA256 tokens (24 h expiry; refresh allowed up to 7 days from login via `POST /api/auth/refresh`). Passwords use Werkzeug's default salted scrypt hash. CORS is restricted to `CORS_ORIGINS`.
 - **Isolation:** Users can only query and mutate their own assessments (`WHERE user_id = ?`).
 - **File Upload Security:** Enforces size limits (`AUDIO_MAX_BYTES = 5MB`, `SPIRAL_MAX_BYTES = 25MB`), MIME type checking, magic bytes verification, temporary file cleanup.
 - **Endpoints:**

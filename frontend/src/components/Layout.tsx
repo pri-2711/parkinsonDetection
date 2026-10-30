@@ -1,8 +1,14 @@
+import { useEffect } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../api/auth';
+import { apiClient } from '../api/client';
 
 export function Layout() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    apiClient.refreshIfNeeded();
+  }, []);
 
   const handleLogout = () => {
     authApi.logout();
@@ -12,19 +18,22 @@ export function Layout() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header style={{ backgroundColor: 'var(--sage-dark)', padding: '1rem 2rem', color: '#FFFFFF', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem 1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <Link to="/dashboard" style={{ color: '#FFFFFF', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ fontSize: '1.4rem' }}>🌿</span>
-              <span style={{ fontSize: '1.25rem', fontWeight: '700', letterSpacing: '-0.01em' }}>Parkinson's Research Lab</span>
+              <span style={{ fontSize: '1.25rem', fontWeight: '700', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>Parkinson's Research Lab</span>
             </Link>
           </div>
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <Link to="/dashboard" style={{ color: '#FFFFFF', textDecoration: 'none', fontWeight: '500', fontSize: '0.95rem', opacity: 0.9 }}>
+          <nav style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.9rem 1.25rem' }}>
+            <Link to="/dashboard" style={{ color: '#FFFFFF', textDecoration: 'none', fontWeight: '500', fontSize: '0.95rem', opacity: 0.9, whiteSpace: 'nowrap' }}>
               Dashboard
             </Link>
-            <Link to="/history" style={{ color: '#FFFFFF', textDecoration: 'none', fontWeight: '500', fontSize: '0.95rem', opacity: 0.9 }}>
+            <Link to="/history" style={{ color: '#FFFFFF', textDecoration: 'none', fontWeight: '500', fontSize: '0.95rem', opacity: 0.9, whiteSpace: 'nowrap' }}>
               History
+            </Link>
+            <Link to="/research" style={{ color: '#FFFFFF', textDecoration: 'none', fontWeight: '500', fontSize: '0.95rem', opacity: 0.9, whiteSpace: 'nowrap' }}>
+              Research &amp; Insights
             </Link>
             <button
               onClick={handleLogout}
@@ -53,7 +62,7 @@ export function Layout() {
       </main>
 
       <footer style={{ backgroundColor: 'var(--cream-dark)', borderTop: '1px solid var(--border-subtle)', padding: '1.25rem 2rem', textAlign: 'center', color: 'var(--text-light)', fontSize: '0.85rem' }}>
-        <p>Algorithmic research demonstration only. Not a clinically validated diagnostic tool.</p>
+        <p>Research prototype: tremor, tablet-handwriting and speech-feature modules are experimental. Not a clinically validated diagnostic tool.</p>
       </footer>
     </div>
   );

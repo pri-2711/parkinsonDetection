@@ -351,11 +351,12 @@ class DatabaseAssessmentTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.get_json())
         analysis = response.get_json()["analysis"]
-        self.assertEqual(analysis["analysis_type"], "opencv_visual_baseline_not_a_diagnosis")
+        self.assertEqual(analysis["analysis_type"], "opencv_ink_and_hand_image_measurements_not_a_diagnosis")
+        self.assertEqual(analysis["annotation_legend"]["red"].split(" ")[0], "Hand")
         self.assertEqual(analysis["video"]["frame_count"], 36)
-        self.assertGreater(analysis["trajectory"]["tracked_points"], 10)
-        self.assertIsNotNone(analysis["trajectory"].get("path_length_px"))
-        self.assertGreater(len(analysis["candidate_movement_events"]), 0)
+        self.assertIn("pen_tip_tracking", analysis["measurements"]["unavailable_measurements"])
+        self.assertIn("pressure", analysis["measurements"]["unavailable_measurements"])
+        self.assertEqual(analysis["candidate_movement_events"], [])
         saved = self.db.get_assessment(assessment["id"], user["id"])
         sidecar = saved["steps"]["spiral"]["outcome"]["video_analysis"]
         self.assertEqual(sidecar["video_id"], analysis["video_id"])
@@ -364,8 +365,9 @@ class DatabaseAssessmentTests(unittest.TestCase):
 
         annotated = self.client.get(sidecar["annotated_video_url"], headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(annotated.status_code, 200)
-        self.assertEqual(annotated.content_type, "video/mp4")
-        decoded_path = Path(self.temp.name) / "returned.mp4"
+        self.assertEqual(annotated.content_type, "video/webm")
+        self.assertEqual(sidecar["analysis"]["annotated_extension"] if "analysis" in sidecar else sidecar["annotated_extension"], "webm")
+        decoded_path = Path(self.temp.name) / "returned.webm"
         decoded_path.write_bytes(annotated.data)
         cap = cv2.VideoCapture(str(decoded_path))
         ok, frame = cap.read()
@@ -453,6 +455,40 @@ class DatabaseAssessmentTests(unittest.TestCase):
         self.assertEqual(len(outcome["feature_values"]), 45)
         self.assertEqual(self.db.get_assessment(assessment["id"], user["id"])["steps"]["speech"]["status"], "unavailable")
         self.assertIsNone(outcome.get("probability"))
+
+    def test_session_for_missing_user_is_rejected_and_real_user_can_create_assessments(self):
+        """Regression: a valid token whose user is absent from the database caused IntegrityError (HTTP 500)."""
+        from app_backend.services.auth import create_token, hash_password
+
+        self.app.extensions["db"] = self.db
+        user = self.db.create_user("sessionuser", "session@example.com", hash_password("password123"))
+        real_token = create_token(user["id"], "test_secret_key_12345")
+        missing_user_token = create_token(user["id"] + 1000, "test_secret_key_12345")
+        stale = {"Authorization": f"Bearer {missing_user_token}"}
+
+        history = self.client.get("/api/history/assessments?limit=1", headers=stale)
+        self.assertEqual(history.status_code, 401, history.get_data(as_text=True))
+        self.assertEqual(history.get_json()["error"]["code"], "user_not_found")
+
+        create = self.client.post("/api/assessments", json={}, headers=stale)
+        self.assertEqual(create.status_code, 401, create.get_data(as_text=True))
+        self.assertEqual(create.get_json()["error"]["code"], "user_not_found")
+        self.assertEqual(self.db.fetchone("SELECT COUNT(*) AS n FROM assessments WHERE user_id = ?", (user["id"] + 1000,))["n"], 0)
+
+        malformed = self.client.post("/api/assessments", json={}, headers={"Authorization": "Bearer x.y.z"})
+        self.assertEqual(malformed.status_code, 401, malformed.get_data(as_text=True))
+
+        real = {"Authorization": f"Bearer {real_token}"}
+        created = self.client.post("/api/assessments", json={}, headers=real)
+        self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        assessment_id = created.get_json()["id"]
+        self.assertEqual(created.get_json()["assessment_id"], assessment_id)
+
+        fetched = self.client.get(f"/api/assessments/{assessment_id}", headers=real)
+        self.assertEqual(fetched.status_code, 200)
+        listed = self.client.get("/api/history/assessments?limit=5", headers=real)
+        self.assertEqual(listed.status_code, 200)
+        self.assertIn(assessment_id, [item["id"] for item in listed.get_json()["assessments"]])
 
     def test_root_and_api_discovery_routes(self):
         for path in ("/", "/api"):

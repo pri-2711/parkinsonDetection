@@ -26,6 +26,11 @@ SPEECH_V2_FEATURES = [
 ]
 
 
+# Model input: gender is excluded when the training cohort has no sex metadata (MDVR-KCL).
+# The extractor still validates and returns gender_code; the trained bundle lists the columns it uses.
+SPEECH_V2_MODEL_FEATURES = [name for name in SPEECH_V2_FEATURES if name != "audio_v2_gender_code"]
+
+
 @dataclass(frozen=True)
 class AudioInput:
     samples: np.ndarray

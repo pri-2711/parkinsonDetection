@@ -9,9 +9,121 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app_backend.services.assessment_summary import build_assessment_summary
 
-def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any] | None = None) -> bytes:
-    """Generate a readable, professional PDF research report for an assessment."""
+MODALITY_NAMES = {"tremor": "Tremor", "spiral": "Handwriting / spiral", "speech": "Speech"}
+
+
+def _summary_table(summary: dict[str, Any], body_style, bold_style, note_style, accent, border) -> Table:
+    rows = [[
+        Paragraph("<b>Modality</b>", bold_style),
+        Paragraph("<b>Step status</b>", bold_style),
+        Paragraph("<b>Verified prediction</b>", bold_style),
+        Paragraph("<b>Experimental observations</b>", bold_style),
+        Paragraph("<b>In fusion</b>", bold_style),
+    ]]
+    for item in summary["modalities"]:
+        probability = f"{item['probability'] * 100:.2f}%" if item["prediction_available"] else "None"
+        observations = " ".join(item["observations"]) or "None saved."
+        rows.append([
+            Paragraph(MODALITY_NAMES[item["modality"]], body_style),
+            Paragraph(str(item["step_status"]).capitalize(), body_style),
+            Paragraph(f"{probability}<br/><font size=7>{item['prediction_note']}</font>", body_style),
+            Paragraph(observations, note_style),
+            Paragraph("Yes" if item["contributes_to_fusion"] else "No", body_style),
+        ])
+    table = Table(rows, colWidths=[78, 62, 150, 200, 42])
+    table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EBF3EA")),
+            ("BOX", (0, 0), (-1, -1), 0.8, accent),
+            ("INNERGRID", (0, 0), (-1, -1), 0.5, border),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ])
+    )
+    return table
+
+
+def _model_information_table(insights: dict[str, Any] | None, body_style, bold_style, note_style, accent, border):
+    if not insights:
+        return Paragraph("Saved experiment outputs could not be read; model validation figures are not included.", body_style)
+    rows = [[
+        Paragraph("<b>Modality</b>", bold_style),
+        Paragraph("<b>Deployed model</b>", bold_style),
+        Paragraph("<b>Pooled tuned metrics (folds 2–5)</b>", bold_style),
+        Paragraph("<b>Fold ROC-AUC (mean ± SD)</b>", bold_style),
+    ]]
+    for modality in insights["modalities"]:
+        tuned = modality["pooled_metrics"].get("tuned_svm") or {}
+        fold_auc = modality["fold_metrics"].get("tuned_svm", {}).get("roc_auc", {})
+        mean, sd = fold_auc.get("mean"), fold_auc.get("sd")
+        metrics_text = (
+            f"Accuracy {tuned.get('accuracy', 0):.3f} · Precision {tuned.get('precision', 0):.3f} · "
+            f"Recall {tuned.get('recall', 0):.3f} · F1 {tuned.get('f1', 0):.3f} · ROC-AUC {tuned.get('roc_auc', 0):.3f}"
+        ) if tuned else "Not available"
+        auc_text = f"{mean:.3f} ± {sd:.3f}" if mean is not None and sd is not None else "Not available"
+        params = modality.get("deployed_params") or {}
+        param_text = ", ".join(f"{k.replace('model__', '')}={v}" for k, v in params.items())
+        label = MODALITY_NAMES.get(modality["modality"], modality["modality"])
+        if modality["modality"] == "speech":
+            label = "Speech legacy baseline (precomputed features; not used live)"
+        rows.append([
+            Paragraph(f"{label}<br/><font size=7>{modality['rows']} rows · {modality['participant_groups']} participant groups</font>", body_style),
+            Paragraph(f"{modality['deployed_family'] or 'n/a'} (calibrated) · {param_text}", note_style),
+            Paragraph(metrics_text, note_style),
+            Paragraph(auc_text, body_style),
+        ])
+    speech_v2 = insights["speech_audio_v2"]
+    reading = speech_v2["modes"].get("reading", {})
+    if reading.get("model_trained"):
+        speech_auc = reading.get("outer_fold_roc_auc_mean")
+        speech_sd = reading.get("outer_fold_roc_auc_sd")
+        rows.append([
+            Paragraph("Speech reading passage (speech_audio_v2)<br/><font size=7>EXPERIMENTAL</font>", body_style),
+            Paragraph(f"{reading.get('deployed_family') or 'n/a'} (calibrated) · 44 features", note_style),
+            Paragraph(
+                f"{reading.get('subjects')} participants ({reading.get('control_subjects')} control, "
+                f"{reading.get('parkinson_subjects')} PD); majority-class accuracy {reading.get('majority_class_accuracy', 0):.3f}. "
+                "Subject-disjoint validation; not clinically validated.", note_style),
+            Paragraph(f"{speech_auc:.3f} ± {speech_sd:.3f}" if speech_auc is not None and speech_sd is not None else "Not available", body_style),
+        ])
+    else:
+        rows.append([
+            Paragraph("Speech (speech_audio_v2)", body_style),
+            Paragraph("No trained model", body_style),
+            Paragraph(speech_v2.get("blocker") or "No trained speech_audio_v2 model.", note_style),
+            Paragraph("Not available", body_style),
+        ])
+    table = Table(rows, colWidths=[118, 150, 170, 94])
+    table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EBF3EA")),
+            ("BOX", (0, 0), (-1, -1), 0.8, accent),
+            ("INNERGRID", (0, 0), (-1, -1), 0.5, border),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ])
+    )
+    return table
+
+
+def generate_assessment_pdf(
+    assessment: dict[str, Any],
+    user_info: dict[str, Any] | None = None,
+    insights: dict[str, Any] | None = None,
+) -> bytes:
+    """Generate a readable, professional PDF research report for an assessment.
+
+    ``insights`` is the saved research output from ``build_research_insights``.
+    It is optional so the report still renders when the experiment files are absent.
+    """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -172,62 +284,30 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
     story.append(meta_table)
     story.append(Spacer(1, 14))
 
-    # Overall Multimodal / Fusion Classification
-    story.append(Paragraph("Multimodal Fusion & Classification Summary", h2_style))
-    results = assessment.get("results", {})
-    fusion = results.get("fusion") if results else None
+    # Assessment summary: modality status, verified predictions, observations and fusion scope
     steps = assessment.get("steps", {})
-
-    if fusion:
-        pred_label = "Parkinson's Class Indicator" if fusion.get("prediction") == 1 else "Control / Non-Parkinson's Class"
+    summary = build_assessment_summary(assessment)
+    story.append(Paragraph("Assessment Summary, Modality Status & Fusion Scope", h2_style))
+    story.append(_summary_table(summary, body_style, bold_body_style, small_note_style, accent_color, border_color))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(f"<b>Fusion status:</b> {summary['fusion']['note']}", body_style))
+    fusion = (assessment.get("results") or {}).get("fusion")
+    if summary["fusion"]["fused_probability_displayed"] and fusion:
         prob_val = fusion.get("probability")
-        prob_pct = f"{prob_val * 100:.2f}%" if prob_val is not None else "N/A"
-        active_modalities = ", ".join(fusion.get("available_modalities", []))
-        omitted_modalities = ", ".join(fusion.get("missing_modalities", [])) or "None"
-        multi_modal = fusion.get("aggregation_type") != "single_modality_probability"
-        score_label = "AUC weighted score (not patient-level calibrated probability)" if multi_modal else "Single model probability"
-
-        fusion_summary_data = [
-            [
-                Paragraph("<b>Model Classification Indicator:</b>", bold_body_style),
-                Paragraph(f"<b>{pred_label}</b>", bold_body_style),
-            ],
-            [
-                Paragraph(f"<b>{score_label}:</b>", body_style),
-                Paragraph(f"<b>{prob_pct}</b> (Threshold = {fusion.get('threshold', 0.5):.2f})", body_style),
-            ],
-            [
-                Paragraph("<b>Contributing Modalities:</b>", body_style),
-                Paragraph(active_modalities, body_style),
-            ],
-            [
-                Paragraph("<b>Omitted / unavailable:</b>", body_style),
-                Paragraph(omitted_modalities, body_style),
-            ],
-            [
-                Paragraph("<b>Validation Scope:</b>", body_style),
-                Paragraph(fusion.get("score_interpretation", "Research result only; multimodal patient-level performance has not been measured."), small_note_style),
-            ],
-        ]
-        f_table = Table(fusion_summary_data, colWidths=[200, 332])
-        f_table.setStyle(
-            TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EBF3EA")),
-                ("BOX", (0, 0), (-1, -1), 1, accent_color),
-                ("INNERGRID", (0, 0), (-1, -1), 0.5, border_color),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ])
-        )
-        story.append(f_table)
-    else:
-        no_fusion_p = Paragraph(
-            "Multi-modality fusion is pending or incomplete. At least one verified model prediction is required to compute fused results.",
+        threshold = fusion.get("threshold", 0.5)
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            f"<b>Single-model probability:</b> {prob_val * 100:.2f}% (threshold {threshold:.2f}). "
+            "This is one modality's classifier output, not a combined multimodal result.",
             body_style,
-        )
-        story.append(no_fusion_p)
+        ))
+    elif fusion and fusion.get("effective_weights"):
+        weights = ", ".join(f"{name}: {value * 100:.0f}%" for name, value in fusion["effective_weights"].items())
+        story.append(Paragraph(
+            f"<b>Contribution weights (AUC-normalized, not probabilities):</b> {weights}. "
+            "The combined probability is withheld because the modality cohorts are unmatched.",
+            small_note_style,
+        ))
 
     story.append(Spacer(1, 14))
 
@@ -260,7 +340,7 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
         1: "1 — Slight (infrequently present)",
         2: "2 — Mild (persistent) / Moderate (intermittent)",
         3: "3 — Moderate (present most of time)",
-        4: "4 — Marked (present most of time)",
+        4: "4 — Extreme (present most of time)",
     }
 
     t_inputs = t_outcome.get("input_features", {}) if isinstance(t_outcome, dict) else {}
@@ -400,7 +480,8 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
         spch_pred = "Parkinson's Class" if spch_outcome.get("prediction") == 1 else "Control Class"
         spch_text = (
             f"<b>Model Result:</b> {spch_pred} (Probability: <b>{spch_prob * 100:.2f}%</b>) | "
-            f"<b>Model Artifact:</b> <code>speech_svm_tuned.joblib</code> (Calibrated RBF SVM, C=1.0, gamma=0.01)"
+            f"<b>Model:</b> speech_audio_v2 {spch_outcome.get('recording_mode', '')} SVM (trained on labelled raw audio; "
+            "validation reported in Section 6)."
         )
         story.append(Paragraph(spch_text, body_style))
     else:
@@ -444,6 +525,23 @@ def generate_assessment_pdf(assessment: dict[str, Any], user_info: dict[str, Any
     )
     story.append(Paragraph(method_text, small_note_style))
     story.append(Spacer(1, 16))
+
+    # Section 6: Model information and saved validation results
+    story.append(Paragraph("6. Model Information & Saved Validation Results", h2_style))
+    story.append(_model_information_table(insights, body_style, bold_body_style, small_note_style, accent_color, border_color))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        "Metrics are grouped five-fold participant-level cross-validation estimates on small cohorts (folds 2–5 reported; "
+        "fold 1 reserved for fusion weights). They are research estimates, not clinical validation.",
+        small_note_style,
+    ))
+    story.append(Spacer(1, 12))
+
+    # Section 7: Limitations
+    story.append(Paragraph("7. Limitations & Scope", h2_style))
+    limitation_items = summary["limitations"]
+    story.append(Paragraph("<br/>".join(f"&bull; {item}" for item in limitation_items), body_style))
+    story.append(Spacer(1, 14))
 
     # Footer line
     story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=8))

@@ -4,6 +4,11 @@ import { useParams } from 'react-router-dom';
 import { assessmentsApi } from '../api/assessments';
 import { appendCanvasSample, summarizeCanvasTelemetry } from '../features/handwritingTelemetry.js';
 import type { CanvasSample, CanvasTelemetrySummary } from '../features/handwritingTelemetry.js';
+import { FileDropZone } from '../components/FileDropZone';
+
+// Must match ANALYSIS_VERSION in app_backend/services/spiral_video_analysis.py.
+const SPIRAL_ANALYSIS_VERSION = 'ink-hand-v2';
+import { VideoObservations } from '../components/VideoObservations';
 
 export function Handwriting() {
   const navigate = useNavigate();
@@ -21,37 +26,43 @@ export function Handwriting() {
   const isDrawingRef = useRef(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
-  const [annotatedUrl, setAnnotatedUrl] = useState<string | null>(null);
   const [videoAnalysis, setVideoAnalysis] = useState<any>(null);
   const [videoBusy, setVideoBusy] = useState(false);
   const [videoError, setVideoError] = useState('');
+  const [tab, setTab] = useState<'draw' | 'video'>('draw');
+  const [previewFailed, setPreviewFailed] = useState(false);
 
   useEffect(() => {
     return () => {
       if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
-      if (annotatedUrl) URL.revokeObjectURL(annotatedUrl);
     };
-  }, [videoPreviewUrl, annotatedUrl]);
+  }, [videoPreviewUrl]);
 
   const selectVideo = (file: File | null) => {
     setVideoFile(file);
+    setPreviewFailed(false);
     setVideoError('');
     setVideoAnalysis(null);
-    if (annotatedUrl) URL.revokeObjectURL(annotatedUrl);
-    setAnnotatedUrl(null);
     if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
     setVideoPreviewUrl(file ? URL.createObjectURL(file) : null);
   };
 
   const analyzeVideo = async () => {
-    if (!id || !videoFile) return;
-    setVideoBusy(true);
+    if (!id || !videoFile || videoBusy) return;
+    // Clear the previous result first, so a failed request never leaves an older analysis on screen.
+    setVideoAnalysis(null);
     setVideoError('');
+    setVideoBusy(true);
     try {
       const response = await assessmentsApi.analyzeSpiralVideo(Number(id), videoFile);
-      const blob = await assessmentsApi.getSpiralVideoBlob(Number(id), 'annotated');
-      setAnnotatedUrl(URL.createObjectURL(blob));
-      setVideoAnalysis(response.analysis);
+      const analysis = response.analysis;
+      if (!analysis?.measurements || analysis.analysis_version !== SPIRAL_ANALYSIS_VERSION || analysis.annotated_video_format !== 'webm') {
+        throw new Error(
+          'The server answered with an analysis from an older version, so the result was not displayed. ' +
+          'Stop the backend that is running on this address, start it again with python -m app_backend, and analyse the video again.'
+        );
+      }
+      setVideoAnalysis(analysis);
     } catch (error) {
       setVideoError(error instanceof Error ? error.message : 'Video analysis failed. Please check the file and try again.');
     } finally {
@@ -84,14 +95,7 @@ export function Handwriting() {
       }
       const savedVideo = outcome?.video_analysis;
       if (savedVideo && active) setVideoAnalysis(savedVideo);
-      if (savedVideo?.status === 'completed' && active) {
-        try {
-          const blob = await assessmentsApi.getSpiralVideoBlob(Number(id), 'annotated');
-          if (active) setAnnotatedUrl(URL.createObjectURL(blob));
-        } catch {
-          if (active) setVideoError('The saved analysis is present, but its private annotated video could not be retrieved.');
-        }
-      }
+
     }).catch(() => undefined);
     return () => { active = false; };
   }, [id]);
@@ -243,114 +247,148 @@ export function Handwriting() {
   return (
     <div className="container" style={{ maxWidth: '820px' }}>
       <button onClick={() => navigate('/dashboard')} className="btn btn-secondary" style={{ marginBottom: '1.25rem' }}>
-        Back to Dashboard
+        ← Back to Dashboard
       </button>
       <div className="card">
         <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-          <h2 style={{ color: 'var(--sage-dark)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>
-            Handwriting &amp; Spiral Test
-          </h2>
-          <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', lineHeight: '1.5' }}>
-            Draw a spiral to capture browser pointer telemetry. This proof of concept reports canvas kinematics and sensor availability;
-            the measured canvas summary is saved to this assessment, but it is not sent to the digitizer-trained classifier and produces no prediction.
+          <h2 style={{ color: 'var(--sage-dark)', fontSize: '1.5rem', marginBottom: '0.4rem' }}>Handwriting &amp; Spiral Assessment</h2>
+          <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', margin: 0 }}>
+            Draw a spiral on screen, or upload a video of one. Both produce research observations only.
           </p>
         </div>
 
-        <p style={{ color: 'var(--text-dark)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-          <strong>Instructions:</strong> Trace the guide from the center outward. Coordinates and elapsed time start at the first
-          pointer-down. Use a pressure-capable pen to test optional browser pressure and tilt reporting.
-        </p>
-        <div className="canvas-container">
-          <canvas
-            ref={canvasRef}
-            width={500}
-            height={500}
-            style={{ cursor: 'crosshair', display: 'block', touchAction: 'none' }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-          />
+        <div role="tablist" aria-label="Spiral input" style={{ display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--border-subtle)', marginBottom: '1.25rem' }}>
+          {(['draw', 'video'] as const).map((key) => (
+            <button key={key} type="button" role="tab" id={`tab-${key}`} aria-selected={tab === key} aria-controls={`panel-${key}`}
+              onClick={() => setTab(key)}
+              style={{ padding: '0.7rem 1.1rem', border: 'none', background: 'none', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600,
+                color: tab === key ? 'var(--sage-dark)' : 'var(--text-light)',
+                borderBottom: tab === key ? '3px solid var(--sage-green)' : '3px solid transparent', marginBottom: '-1px' }}>
+              {key === 'draw' ? 'Draw Spiral' : 'Upload Video'}
+            </button>
+          ))}
         </div>
-        <div className="canvas-toolbar">
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: '500' }}>
-            Captured pointer samples: <strong>{pointCount}</strong> {isDrawing ? '(drawing)' : canvasSaved ? '(summary saved)' : '(local capture)'}
-          </span>
-          <button type="button" className="btn btn-secondary" onClick={initializeCanvas}>
-            Clear Canvas
+
+        {tab === 'draw' && (
+          <section id="panel-draw" role="tabpanel" aria-labelledby="tab-draw">
+
+          <h3 id="draw-heading" style={{ color: 'var(--sage-dark)', fontSize: '1.1rem', margin: '0 0 0.4rem' }}>1. Draw a spiral</h3>
+          <p style={{ color: 'var(--text-light)', fontSize: '0.88rem', margin: '0 0 0.75rem' }}>
+            Trace the guide from the centre outward, then save the drawing.
+          </p>
+          <div className="canvas-container">
+            <canvas
+              ref={canvasRef}
+              width={500}
+              height={500}
+              style={{ cursor: 'crosshair', display: 'block', touchAction: 'none', maxWidth: '100%', height: 'auto' }}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+            />
+          </div>
+          <div className="canvas-toolbar">
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>
+              {pointCount > 0 || isDrawing
+                ? <>Points captured: <strong>{pointCount}</strong>{isDrawing ? ' (drawing)' : canvasSaved ? ' (saved)' : ''}</>
+                : canvasSaved ? 'A saved drawing is on record' : 'No points captured yet'}
+            </span>
+            <button type="button" className="btn btn-secondary" onClick={initializeCanvas}>Clear</button>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: '0.75rem', padding: '0.8rem' }}
+            onClick={reviewCapture}
+            disabled={pointCount < 2 || isDrawing || canvasSaving}
+          >
+            {canvasSaving ? 'Saving drawing…' : 'Save drawing'}
           </button>
-        </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ width: '100%', marginTop: '1.25rem', padding: '0.85rem' }}
-          onClick={reviewCapture}
-          disabled={pointCount < 2 || isDrawing || canvasSaving}
-        >
-          {canvasSaving ? 'Saving Canvas Observations…' : 'Save & Review Canvas Telemetry'}
-        </button>
-        {canvasError && <p role="alert" style={{ color: '#9b2c2c' }}>{canvasError}</p>}
-        {summary && (
-          <section aria-live="polite" style={{ marginTop: '1rem', padding: '1rem', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-            <h3 style={{ color: 'var(--sage-dark)', marginTop: 0 }}>Canvas telemetry observations {canvasSaved ? '(saved)' : '(local preview)'}</h3>
-            <p>{summary.sampleCount} samples · {summary.strokeCount} stroke(s) · {summary.pathLengthPx.toFixed(1)} canvas px path · {summary.durationMs.toFixed(0)} ms</p>
-            <p>
-              Speed: {summary.meanSpeedPxPerSecond == null ? 'not enough samples' : `${summary.meanSpeedPxPerSecond.toFixed(1)} px/s mean, ${summary.maxSpeedPxPerSecond?.toFixed(1)} px/s max`} ·
-              Acceleration samples: {samplesRef.current.filter((sample) => sample.accelerationPxPerSecond2 != null).length} ·
-              Jerk samples: {samplesRef.current.filter((sample) => sample.jerkPxPerSecond3 != null).length}
-            </p>
-            <p>
-              Pressure: {summary.pressureSamples ? `${summary.pressureSamples} browser-reported samples (${(summary.pressureCoverage * 100).toFixed(0)}% coverage; normalized, not tablet-calibrated)` : 'unavailable'} ·
-              Tilt: {summary.tiltSamples ? `${summary.tiltSamples} nonzero pen-tilt samples` : 'unavailable'} ·
-              Pauses ≥250 ms: {summary.pausesMs.length}
-            </p>
-            <details>
-              <summary>Coverage against the 16-feature model schema</summary>
-              <ul>
-                <li><strong>Direct:</strong> n_points (browser event count only).</li>
-                <li><strong>Approximate, canvas units:</strong> path_length, velocity, acceleration, jerk, movement_duration, spatial_std, bounding_box_diagonal.</li>
-                <li><strong>Hardware-dependent and not schema-compatible:</strong> pressure statistics (normalized browser pressure, without tablet calibration).</li>
-                <li><strong>Unavailable:</strong> grip_angle_std. Pen tilt is orientation and is not grip angle.</li>
-                <li><strong>Not equivalent:</strong> pen-up fraction. Stroke boundaries are recorded, but are not the training digitizer's z measurement.</li>
-              </ul>
-              <p>Canvas-derived observations are stored separately. The existing classifier is not called and no disease prediction is generated.</p>
-            </details>
+          {canvasError && <p role="alert" className="error" style={{ marginTop: '0.6rem' }}>{canvasError}</p>}
+          {summary && (
+            <div aria-live="polite" style={{ marginTop: '0.9rem', padding: '0.9rem 1rem', border: '1px solid var(--border-subtle)', borderRadius: 6, background: '#FAFAF7' }}>
+              <strong style={{ color: 'var(--text-dark)' }}>Drawing summary {canvasSaved ? '(saved)' : '(not yet saved)'}</strong>
+              <p style={{ margin: '0.4rem 0 0', fontSize: '0.9rem' }}>
+                {summary.sampleCount} points · {summary.strokeCount} stroke(s) · {(summary.durationMs / 1000).toFixed(1)} s
+              </p>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: 'var(--text-light)' }}>
+                Screen estimate only: not calibrated to a tablet and not a clinical measurement.
+              </p>
+              <details style={{ marginTop: '0.6rem' }}>
+                <summary>Measurement details</summary>
+                <ul style={{ fontSize: '0.88rem' }}>
+                  <li>Path length: {summary.pathLengthPx.toFixed(1)} canvas px</li>
+                  <li>Mean speed: {summary.meanSpeedPxPerSecond == null ? 'not enough samples' : `${summary.meanSpeedPxPerSecond.toFixed(1)} px/s (max ${summary.maxSpeedPxPerSecond?.toFixed(1)})`}</li>
+                  <li>Pauses of 250 ms or more: {summary.pausesMs.length}</li>
+                  <li>Pressure: {summary.pressureSamples ? `${summary.pressureSamples} browser-reported samples (normalized, not tablet-calibrated)` : 'not reported by this device'}</li>
+                  <li>Pen tilt: {summary.tiltSamples ? `${summary.tiltSamples} samples` : 'not reported by this device'}</li>
+                </ul>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                  The handwriting classifier was trained on digitizer data with calibrated pressure and grip angle. Screen drawings do not provide those, so they are not classified.
+                </p>
+              </details>
+            </div>
+          )}
           </section>
         )}
 
-        <section style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
-          <h3 style={{ color: 'var(--sage-dark)' }}>Spiral test video analysis</h3>
-          <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', lineHeight: 1.5 }}>
-            Upload a separate camera recording for an experimental OpenCV visual analysis. This does not call the handwriting classifier.
-          </p>
-          <label htmlFor="spiral-video">Upload Video (MP4, MOV, AVI, or WebM)</label>
-          <input
-            id="spiral-video"
-            type="file"
-            accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,.mp4,.mov,.avi,.webm"
-            onChange={(event) => selectVideo(event.target.files?.[0] ?? null)}
-            disabled={videoBusy}
-            style={{ display: 'block', margin: '0.6rem 0' }}
-          />
-          {videoFile && <p aria-live="polite">Selected: <strong>{videoFile.name}</strong> ({(videoFile.size / 1024 / 1024).toFixed(1)} MB)</p>}
-          {videoPreviewUrl && <video controls preload="metadata" src={videoPreviewUrl} style={{ display: 'block', width: '100%', maxHeight: 360, margin: '0.75rem 0', background: '#111' }}>Video preview is unavailable in this browser.</video>}
-          <button type="button" className="btn btn-primary" onClick={analyzeVideo} disabled={!videoFile || videoBusy || !id}>
-            {videoBusy ? 'Uploading and analysing…' : 'Analyse Video'}
-          </button>
-          {videoBusy && <p role="status">Uploading video and generating annotated output. This can take a little time.</p>}
-          {videoError && <p role="alert" style={{ color: '#9b2c2c' }}>{videoError}</p>}
-          {videoAnalysis && (
-            <div aria-live="polite" style={{ marginTop: '1rem', padding: '1rem', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
-              <h4 style={{ marginTop: 0 }}>Video analysis observations</h4>
-              <p>Duration: {videoAnalysis.video.duration_seconds}s · {videoAnalysis.video.fps} fps · {videoAnalysis.video.width} × {videoAnalysis.video.height}</p>
-              <p>Tracked candidate points: {videoAnalysis.trajectory.tracked_points}</p>
-              {videoAnalysis.trajectory.path_length_px != null && <p>Visible-change path: {videoAnalysis.trajectory.path_length_px} px · mean speed: {videoAnalysis.trajectory.mean_speed_px_per_second} px/s · speed variation (CV): {videoAnalysis.trajectory.speed_coefficient_of_variation} · mean direction change: {videoAnalysis.trajectory.mean_direction_change_degrees}°</p>}
-              <p>Red candidate movement annotations: {videoAnalysis.candidate_movement_events.length} · blue visible appearance observations: {videoAnalysis.visible_appearance_events.length}</p>
-              <ul>{videoAnalysis.limitations.map((limitation: string) => <li key={limitation}>{limitation}</li>)}</ul>
-              {annotatedUrl && <video controls preload="metadata" src={annotatedUrl} style={{ display: 'block', width: '100%', maxHeight: 420, background: '#111' }}>Annotated video playback is unavailable in this browser.</video>}
-            </div>
-          )}
-        </section>
+        {tab === 'video' && (
+          <section id="panel-video" role="tabpanel" aria-labelledby="tab-video">
+            <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', margin: '0 0 0.9rem' }}>
+              Upload a recording of a spiral. The app detects the ink on the paper, ignores the hand and pen, and produces an annotated copy of the video.
+            </p>
+            <FileDropZone
+              id="spiral-video"
+              file={videoFile}
+              accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,.mp4,.mov,.avi,.webm"
+              acceptLabel="MP4, MOV, AVI or WebM"
+              disabled={videoBusy}
+              onFile={selectVideo}
+            />
+            {videoPreviewUrl && (
+              <div style={{ marginTop: '0.9rem' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', margin: '0 0 0.3rem' }}>Original upload (unchanged)</p>
+                <video controls preload="metadata" src={videoPreviewUrl} onError={() => setPreviewFailed(true)} style={{ display: 'block', width: '100%', maxHeight: 340, background: '#111', borderRadius: 8 }}>
+                  Your browser cannot play this video.
+                </video>
+                {previewFailed && (
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', margin: '0.4rem 0 0' }}>
+                    This browser cannot preview the original file. The analysis can still run on it.
+                  </p>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: '0.9rem' }}
+              onClick={analyzeVideo}
+              disabled={!videoFile || videoBusy || !id}
+            >
+              {videoBusy ? 'Analysing video…' : 'Analyse Video'}
+            </button>
+            {videoBusy && <p role="status" style={{ fontSize: '0.88rem', color: 'var(--text-light)' }}>Uploading and creating the annotated video. This can take a minute.</p>}
+            {videoError && <p role="alert" className="error" style={{ marginTop: '0.6rem' }}>{videoError}</p>}
+            {videoAnalysis && videoAnalysis.status === 'failed' && (
+              <p role="alert" className="error" style={{ marginTop: '0.6rem' }}>
+                Video analysis failed: {videoAnalysis.error?.message ?? 'no annotated output was created.'}
+              </p>
+            )}
+            {videoAnalysis && videoAnalysis.status === 'completed' && videoAnalysis.video && (
+              <VideoObservations analysis={videoAnalysis} assessmentId={Number(id)} />
+            )}
+          </section>
+        )}
+
+        <details style={{ marginTop: '1.5rem' }}>
+          <summary style={{ color: 'var(--text-light)' }}>About these observations</summary>
+          <ul style={{ fontSize: '0.88rem', color: 'var(--text-light)' }}>
+            <li>Screen drawings record pointer positions, so their speed and timing values are estimates, not clinical measurements.</li>
+            <li>Video analysis measures visible pixel changes. It does not measure tremor, pen pressure or grip.</li>
+            <li>Neither input is passed to the handwriting classifier, and no disease prediction is produced from them.</li>
+          </ul>
+        </details>
       </div>
     </div>
   );

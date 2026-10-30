@@ -1,5 +1,7 @@
 from flask import Blueprint, current_app, jsonify
 
+from app_backend.services.acoustic_features import SPEECH_V2_FEATURES
+
 health_bp = Blueprint("health", __name__)
 
 
@@ -28,19 +30,29 @@ def health():
     audio_v2_models = current_app.extensions["speech_audio_v2_models"]
     readiness["speech_audio_v2"] = {
         mode: {"model_loaded": model.ready, "error_code": model.error_code,
-               "feature_schema": "speech_audio_v2", "expected_feature_count": 45}
+               "feature_schema": "speech_audio_v2", "expected_feature_count": len(SPEECH_V2_FEATURES)}
         for mode, model in audio_v2_models.items()
     }
-    readiness["speech"]["prediction_available"] = any(model.ready for model in audio_v2_models.values())
-    readiness["speech"]["legacy_baseline_loaded"] = readiness["speech"]["model_loaded"]
-    readiness["speech"]["probability_output"] = readiness["speech"]["prediction_available"]
-    readiness["speech"]["blocker"] = None if readiness["speech"]["prediction_available"] else "speech_audio_v2_model_not_trained"
-    all_models_loaded = all(readiness[name]["model_loaded"] for name in ("speech", "handwriting", "tremor"))
+    # The legacy 45-feature SVM is kept as a saved baseline only. It is never
+    # called with speech_audio_v2 values, so it must not count as speech readiness.
+    speech = readiness["speech"]
+    speech["legacy_baseline_loaded"] = speech["model_loaded"]
+    speech["model_loaded"] = any(model.ready for model in audio_v2_models.values())
+    speech["prediction_available"] = speech["model_loaded"]
+    speech["probability_output"] = speech["prediction_available"]
+    speech["status"] = "prediction_available" if speech["prediction_available"] else "extraction_only"
+    speech["blocker"] = None if speech["prediction_available"] else "speech_audio_v2_model_not_trained"
+    # Overall health covers the modalities that can currently predict. Speech
+    # extraction is reported separately so a blocked modality is not a fault.
+    enabled_models_loaded = all(readiness[name]["model_loaded"] for name in ("handwriting", "tremor"))
+    from app_backend.services.spiral_video_analysis import ANALYSIS_VERSION
     return jsonify({
-        "status": "ok" if all_models_loaded else "degraded",
+        "status": "ok" if enabled_models_loaded else "degraded",
+        "versions": {"spiral_video_analysis": ANALYSIS_VERSION},
         "models": readiness,
         "capabilities": {
-            "speech_prediction": readiness["speech"]["prediction_available"],
+            "speech_feature_extraction": True,
+            "speech_prediction": speech["prediction_available"],
             "spiral_prediction": readiness["handwriting"]["camera_input_prediction_available"],
             "tremor_classification": readiness["tremor"]["prediction_available"],
             "manual_tremor_prototype": True,
@@ -48,5 +60,5 @@ def health():
             "updrs_regression": False,
         },
         "disclaimer": "Research prototype only. Predictions are experimental probabilities, not medical diagnoses."
-    }), (200 if all_models_loaded else 503)
+    }), (200 if enabled_models_loaded else 503)
 

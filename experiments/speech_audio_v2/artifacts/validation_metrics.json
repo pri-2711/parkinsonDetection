@@ -1,0 +1,162 @@
+{
+  "reading": {
+    "n_recordings": 256,
+    "n_subjects": 37,
+    "n_control_subjects": 21,
+    "n_parkinson_subjects": 16,
+    "skipped_recordings": [
+      {
+        "audio_path": "ID03_00.wav",
+        "subject_id": "MDVR-ID03",
+        "code": "speech_feature_extraction_failed"
+      },
+      {
+        "audio_path": "ID21_00.wav",
+        "subject_id": "MDVR-ID21",
+        "code": "speech_feature_extraction_failed"
+      },
+      {
+        "audio_path": "ID25_00.wav",
+        "subject_id": "MDVR-ID25",
+        "code": "speech_feature_extraction_failed"
+      }
+    ],
+    "outer_folds": 5,
+    "subject_disjoint_folds": true,
+    "majority_class_accuracy": 0.60546875,
+    "families": {
+      "svm": {
+        "outer_fold_metrics": [
+          {
+            "accuracy": 0.66,
+            "precision": 0.5357142857142857,
+            "recall": 0.7894736842105263,
+            "f1": 0.6382978723404256,
+            "roc_auc": 0.7164685908319185
+          },
+          {
+            "accuracy": 0.6226415094339622,
+            "precision": 0.7142857142857143,
+            "recall": 0.21739130434782608,
+            "f1": 0.3333333333333333,
+            "roc_auc": 0.6260869565217391
+          },
+          {
+            "accuracy": 0.64,
+            "precision": 0.6,
+            "recall": 0.3,
+            "f1": 0.4,
+            "roc_auc": 0.5449999999999999
+          },
+          {
+            "accuracy": 0.5714285714285714,
+            "precision": 0.4583333333333333,
+            "recall": 0.5789473684210527,
+            "f1": 0.5116279069767442,
+            "roc_auc": 0.47894736842105257
+          },
+          {
+            "accuracy": 0.7037037037037037,
+            "precision": 0.7,
+            "recall": 0.35,
+            "f1": 0.4666666666666667,
+            "roc_auc": 0.8441176470588234
+          }
+        ],
+        "outer_fold_summary": {
+          "accuracy": {
+            "mean": 0.6395547569132474,
+            "sd": 0.04863262451687017
+          },
+          "precision": {
+            "mean": 0.6016666666666668,
+            "sd": 0.1086846736050856
+          },
+          "recall": {
+            "mean": 0.44716247139588106,
+            "sd": 0.23368587545265362
+          },
+          "f1": {
+            "mean": 0.4699851558634339,
+            "sd": 0.11580797064615801
+          },
+          "roc_auc": {
+            "mean": 0.6421241125667067,
+            "sd": 0.1437405847968848
+          }
+        },
+        "full_data_inner_roc_auc": 0.7263459063459063
+      },
+      "random_forest": {
+        "outer_fold_metrics": [
+          {
+            "accuracy": 0.62,
+            "precision": 0.5,
+            "recall": 0.5263157894736842,
+            "f1": 0.5128205128205128,
+            "roc_auc": 0.6434634974533107
+          },
+          {
+            "accuracy": 0.660377358490566,
+            "precision": 0.7777777777777778,
+            "recall": 0.30434782608695654,
+            "f1": 0.4375,
+            "roc_auc": 0.7217391304347825
+          },
+          {
+            "accuracy": 0.66,
+            "precision": 0.6666666666666666,
+            "recall": 0.3,
+            "f1": 0.41379310344827586,
+            "roc_auc": 0.7016666666666667
+          },
+          {
+            "accuracy": 0.5918367346938775,
+            "precision": 0.47058823529411764,
+            "recall": 0.42105263157894735,
+            "f1": 0.4444444444444444,
+            "roc_auc": 0.5052631578947367
+          },
+          {
+            "accuracy": 0.6296296296296297,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "roc_auc": 0.7147058823529412
+          }
+        ],
+        "outer_fold_summary": {
+          "accuracy": {
+            "mean": 0.6323687445628147,
+            "sd": 0.028945211814226646
+          },
+          "precision": {
+            "mean": 0.48300653594771237,
+            "sd": 0.2976404854877653
+          },
+          "recall": {
+            "mean": 0.3103432494279176,
+            "sd": 0.1970764862466646
+          },
+          "f1": {
+            "mean": 0.3617116121426466,
+            "sd": 0.20552996936834905
+          },
+          "roc_auc": {
+            "mean": 0.6573676669604875,
+            "sd": 0.0904473123384539
+          }
+        },
+        "full_data_inner_roc_auc": 0.6608998587945957
+      }
+    },
+    "deployed_family": "svm",
+    "deployed_params": {
+      "clf__C": 0.1,
+      "clf__gamma": "scale",
+      "select__k": 20
+    },
+    "threshold": 0.5,
+    "validation": "StratifiedGroupKFold by subject, 5 outer folds; feature selection, scaling, tuning and calibration inside training folds"
+  }
+}

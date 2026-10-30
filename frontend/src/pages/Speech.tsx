@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { assessmentsApi } from '../api/assessments';
+import { Icon } from '../components/Icon';
+import { speechStatusLabel, speechStepSummary } from '../features/fusionDisplay.js';
 
 const READING_PASSAGE = 'Today is a pleasant day. I am speaking at my normal pace and volume. I will read each sentence clearly and naturally, without rushing. After finishing the passage, I will pause briefly before ending the recording.';
 const PASSAGE_VERSION = '1.0';
@@ -48,8 +50,7 @@ export function Speech() {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [savedSpeech, setSavedSpeech] = useState<any>(null);
-  const [savedSpeechStatus, setSavedSpeechStatus] = useState<string>('pending');
+  const [savedSpeechStep, setSavedSpeechStep] = useState<{ status?: string; outcome?: any; error?: string | null } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -65,8 +66,7 @@ export function Speech() {
   useEffect(() => {
     if (!id) return;
     assessmentsApi.get(Number(id)).then((assessment) => {
-      setSavedSpeech(assessment.steps.speech.outcome);
-      setSavedSpeechStatus(assessment.steps.speech.status);
+      setSavedSpeechStep(assessment.steps.speech);
     }).catch(() => undefined);
   }, [id]);
 
@@ -151,8 +151,7 @@ export function Speech() {
         gender_code: genderCode,
         ...(recordingMode === 'reading' ? { passage_version: PASSAGE_VERSION, passage_text: READING_PASSAGE } : {}),
       });
-      setSavedSpeech(response.outcome);
-      setSavedSpeechStatus(response.status);
+      setSavedSpeechStep({ status: response.status, outcome: response.outcome, error: null });
       navigate(`/results/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Speech processing error');
@@ -172,24 +171,34 @@ export function Speech() {
           <h2 style={{ color: 'var(--sage-dark)', fontSize: '1.5rem', marginBottom: '0.75rem' }}>
             Speech Assessment
           </h2>
-          <p style={{ color: 'var(--text-dark)', fontSize: '0.95rem', lineHeight: '1.6', backgroundColor: '#FAFAF7', padding: '1rem', borderRadius: '6px', borderLeft: '4px solid var(--sage-green)' }}>
-            <strong>Speech Assessment:</strong> WAV recordings are processed with the separate speech_audio_v2 schema. No compatible mode-specific model is currently available, so a successful extraction is saved as unavailable for prediction. The legacy SVM is not used with these features. This research tool is not a medical diagnosis.
+          <p style={{ color: 'var(--text-light)', fontSize: '0.92rem', lineHeight: '1.5', margin: 0 }}>
+            Record or upload a WAV recording. The audio is analysed and then discarded. The result is an experimental research score, not a diagnosis.
           </p>
+          <details style={{ marginTop: '0.75rem' }}>
+            <summary>About the experimental model</summary>
+            <ul style={{ fontSize: '0.88rem', color: 'var(--text-light)' }}>
+              <li>The reading-passage model was trained on 37 public recordings (21 control, 16 Parkinson's). Its cross-validated ROC-AUC is 0.642 ± 0.144, close to the majority-class baseline of 0.605.</li>
+              <li>It was not tested on recordings made in this app. Its passage, device and language differ from the training recordings.</li>
+              <li>Sustained-vowel recordings have no trained model; they produce features only.</li>
+              <li>Audio is not stored. Only the extracted features and the score are saved to the assessment.</li>
+            </ul>
+          </details>
         </div>
 
         <div style={{ marginBottom: '1rem' }}>
           <label htmlFor="speech-mode" style={{ display: 'block', fontWeight: 600, marginBottom: '0.4rem' }}>Recording task</label>
           <select id="speech-mode" value={recordingMode} onChange={(event) => { setRecordingMode(event.target.value as 'reading' | 'sustained_vowel'); setRecordedBlob(null); setFile(null); setAudioUrl(null); setError(''); }}>
             <option value="reading">Read the passage</option>
-            <option value="sustained_vowel">Sustain “ah” for at least 5 seconds</option>
+            <option value="sustained_vowel">Sustained “ah” (features only)</option>
           </select>
         </div>
         <div style={{ marginBottom: '1rem' }}>
-          <label htmlFor="speech-gender" style={{ display: 'block', fontWeight: 600, marginBottom: '0.4rem' }}>Dataset gender category (required)</label>
+          <label htmlFor="speech-gender" style={{ display: 'block', fontWeight: 600, marginBottom: '0.4rem' }}>Sex (required)</label>
           <select id="speech-gender" value={genderCode} onChange={(event) => setGenderCode(event.target.value)}>
-            <option value="">Choose…</option><option value="0">Man (code 0)</option><option value="1">Woman (code 1)</option>
+            <option value="">Select…</option>
+            <option value="0">Male</option>
+            <option value="1">Female</option>
           </select>
-          <small>The source dataset contains only codes 0 and 1; this value is never inferred from audio.</small>
         </div>
         {recordingMode === 'reading' && <div style={{ backgroundColor: '#F4F7F2', border: '1px solid var(--sage-light)', padding: '1.25rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
@@ -203,7 +212,7 @@ export function Speech() {
           </p>
         </div>}
         {recordingMode === 'sustained_vowel' && <div style={{ backgroundColor: '#F4F7F2', border: '1px solid var(--sage-light)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
-          Hold a steady “ah” vowel on one breath for at least five seconds. This is a separate task from reading; the experimental v2 extractor does not treat them as interchangeable.
+          Hold a steady “ah” for at least five seconds. This task produces features only; no prediction is available for it.
         </div>}
 
         {/* Input Method Selector Tabs */}
@@ -222,7 +231,7 @@ export function Speech() {
             style={{ borderRadius: '6px 6px 0 0', borderBottom: 'none' }}
             onClick={() => { setActiveTab('upload'); setError(''); }}
           >
-            📁 Upload WAV File
+            <Icon name="upload" />Upload WAV File
           </button>
         </div>
 
@@ -230,7 +239,7 @@ export function Speech() {
           {activeTab === 'record' ? (
             <div style={{ textAlign: 'center', padding: '1.5rem', backgroundColor: '#FAFAF7', borderRadius: '8px', border: '1px solid var(--border-subtle)', marginBottom: '1.5rem' }}>
               <div style={{ marginBottom: '1rem' }}>
-                <span style={{ fontSize: '2.5rem' }}>{recording ? '🔴' : '🎙️'}</span>
+                <span style={{ fontSize: '2.5rem' }}>{recording ? <span aria-label="Recording" style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', background: '#B93838' }} /> : '🎙️'}</span>
                 <p style={{ fontWeight: '600', color: 'var(--text-dark)', marginTop: '0.5rem' }}>
                   {recording ? `Recording in progress (${recordingDuration}s)… ${recordingMode === 'reading' ? 'Speak the passage clearly.' : 'Sustain a steady “ah” vowel.'}` : recordedBlob ? `Recording captured (${recordingDuration}s)` : 'Click to begin microphone recording'}
                 </p>
@@ -284,10 +293,8 @@ export function Speech() {
           )}
 
           {/* Model Feature Contract Notice */}
-          <div style={{ backgroundColor: 'var(--cream-dark)', padding: '0.85rem 1rem', borderRadius: '6px', marginBottom: '1.5rem' }}>
-            <p style={{ color: 'var(--text-dark)', fontSize: '0.85rem', margin: 0 }}>
-              <strong>Experimental extractor:</strong> The separate schema uses Praat voice measures, band-limited HNR, custom recurrence/DFA/pitch-period entropy/GNE, and documented MFCC/delta settings. Its features are not the saved SVM inputs. Audio is uploaded for processing and not retained. Extracted feature values and their schema are saved to this assessment; predictions remain unavailable until a compatible model is trained.
-            </p>
+          <div style={{ backgroundColor: '#F4F7F2', border: '1px solid var(--border-subtle)', padding: '0.85rem 1rem', borderRadius: '8px', fontSize: '0.88rem', color: 'var(--text-light)' }}>
+            Audio is analysed and not kept. Only the extracted features and the score are saved to this assessment.
           </div>
 
           {error && (
@@ -305,12 +312,13 @@ export function Speech() {
             {submitting ? 'Validating Audio & Processing…' : 'Submit Speech Sample'}
           </button>
         </form>
-        {savedSpeech && (
+        {savedSpeechStep && (
           <section aria-live="polite" style={{ marginTop: '1.25rem', padding: '1rem', background: '#FAFAF7', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
-            <h3 style={{ marginTop: 0, color: 'var(--sage-dark)' }}>Saved speech processing result ({savedSpeechStatus})</h3>
-            <p>{savedSpeech.feature_extraction === 'completed' ? `${savedSpeech.feature_count} ${savedSpeech.feature_schema} features extracted.` : savedSpeech.error || 'No feature extraction result is saved.'}</p>
-            {savedSpeech.feature_values && <details><summary>View extracted feature values</summary><dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.4rem 1rem' }}>{Object.entries(savedSpeech.feature_values).map(([name, value]) => <div key={name}><dt style={{ fontWeight: 600 }}>{name}</dt><dd style={{ margin: 0 }}>{typeof value === 'number' ? value.toPrecision(6) : String(value)}</dd></div>)}</dl></details>}
-            {typeof savedSpeech.probability === 'number' && <p>Model probability: {(savedSpeech.probability * 100).toFixed(1)}% — research output, not a diagnosis.</p>}
+            <h3 style={{ marginTop: 0, color: 'var(--sage-dark)' }}>
+              Saved speech result: {speechStatusLabel(savedSpeechStep.status)}
+            </h3>
+            <p>{speechStepSummary(savedSpeechStep).text}</p>
+            {savedSpeechStep.outcome?.feature_values && <details><summary>View extracted feature values</summary><dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.4rem 1rem' }}>{Object.entries(savedSpeechStep.outcome.feature_values).map(([name, value]) => <div key={name}><dt style={{ fontWeight: 600 }}>{name}</dt><dd style={{ margin: 0 }}>{typeof value === 'number' ? value.toPrecision(6) : String(value)}</dd></div>)}</dl></details>}
           </section>
         )}
       </div>

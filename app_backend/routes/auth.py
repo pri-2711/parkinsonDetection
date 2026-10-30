@@ -4,7 +4,8 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from app_backend.database import Database
 from app_backend.errors import APIError
-from app_backend.services.auth import authenticate_user, login_required, register_user
+from app_backend.services.auth import SESSION_MAX_SECONDS, authenticate_user, create_token, decode_token, login_required, register_user
+import time
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -59,3 +60,16 @@ def get_current_user():
     if not user:
         raise APIError(404, "user_not_found", "User not found.")
     return jsonify({"id": user["id"], "username": user["username"], "email": user["email"]}), 200
+
+
+@auth_bp.post("/api/auth/refresh")
+@login_required
+def refresh_token():
+    """Issue a new 24-hour token for a valid session, bounded by the original login time."""
+    secret = _require_secret()
+    token = request.headers.get("Authorization", "")[7:].strip()
+    payload = decode_token(token, secret)
+    started = payload.get("sst", payload.get("iat", 0))
+    if not isinstance(started, int) or time.time() - started > SESSION_MAX_SECONDS:
+        raise APIError(401, "session_expired", "This session has reached its maximum length. Please log in again.")
+    return jsonify({"token": create_token(g.user_id, secret, session_started=started)}), 200

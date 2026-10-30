@@ -7,7 +7,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from app_backend.services.acoustic_features import SPEECH_V2_FEATURES
+from app_backend.services.acoustic_features import SPEECH_V2_FEATURES, SPEECH_V2_MODEL_FEATURES
 
 
 class SpeechV2Model:
@@ -21,7 +21,7 @@ class SpeechV2Model:
         try:
             bundle = joblib.load(self.path)
             if (bundle.get("schema") != "speech_audio_v2" or bundle.get("mode") != mode
-                    or bundle.get("features") != SPEECH_V2_FEATURES):
+                    or bundle.get("features") != SPEECH_V2_MODEL_FEATURES):
                 raise ValueError("v2 model contract mismatch")
             model = bundle.get("model")
             if not callable(getattr(model, "predict_proba", None)) or np.asarray(model.classes_).tolist() != [0, 1]:
@@ -41,6 +41,7 @@ class SpeechV2Model:
             raise RuntimeError("speech audio v2 model is not ready")
         if list(features.columns) != SPEECH_V2_FEATURES or features.shape != (1, len(SPEECH_V2_FEATURES)):
             raise ValueError("speech v2 feature order or shape mismatch")
+        features = features.loc[:, SPEECH_V2_MODEL_FEATURES]
         proba = np.asarray(self.bundle["model"].predict_proba(features), dtype=float)
         if proba.shape != (1, 2) or not np.isfinite(proba).all() or not np.isclose(proba.sum(), 1.0):
             raise ValueError("speech v2 model returned an invalid probability")

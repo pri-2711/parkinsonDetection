@@ -59,7 +59,7 @@ const ratingDescriptions: Record<number, string> = {
   1: '1 — Slight: Slight and infrequently present',
   2: '2 — Mild: Mild amplitude & persistent, or moderate & intermittent',
   3: '3 — Moderate: Moderate amplitude and present most of the time',
-  4: '4 — Marked: Marked amplitude and present most of the time',
+  4: '4 — Extreme: Extreme amplitude and present most of the time',
 };
 
 export function Tremor() {
@@ -121,17 +121,13 @@ export function Tremor() {
             Tremor Assessment (UPDRS III Motor Scale)
           </h2>
           <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', lineHeight: '1.5' }}>
-            This module evaluates tremor patterns using the trained research classifier (<code>tremor_svm_tuned.joblib</code>).
-            Enter the <strong>seven standardized clinician ratings</strong> from UPDRS III items 20 and 21.
-            Each rating must be a discrete integer score from <strong>0 (normal/none)</strong> to <strong>4 (marked severity)</strong>.
+            Enter the seven clinician ratings from UPDRS III items 20 and 21. Each rating is an integer from 0 (none) to 4 (marked).
           </p>
         </div>
 
         <div style={{ backgroundColor: 'var(--cream-dark)', padding: '0.85rem 1rem', borderRadius: '6px', marginBottom: '1.5rem' }}>
           <p style={{ color: 'var(--text-dark)', fontSize: '0.85rem', margin: 0 }}>
-            <strong>Protocol Notice:</strong> In clinical research workflows, UPDRS ratings are recorded by a certified movement disorder specialist.
-            These values serve as inputs to a trained research classifier and return an estimated class probability, not a definitive diagnosis.
-          </p>
+            <strong>Research use only.</strong> Ratings should come from a clinician. The result is a classifier probability, not a diagnosis.</p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -171,7 +167,7 @@ export function Tremor() {
                         <div>
                           <span style={{ fontSize: '1.1rem', display: 'block', fontWeight: '700' }}>{score}</span>
                           <span style={{ fontSize: '0.72rem', opacity: 0.85, display: 'block' }}>
-                            {score === 0 ? 'None' : score === 1 ? 'Slight' : score === 2 ? 'Mild' : score === 3 ? 'Mod' : 'Marked'}
+                            {score === 0 ? 'None' : score === 1 ? 'Slight' : score === 2 ? 'Mild' : score === 3 ? 'Moderate' : 'Extreme'}
                           </span>
                         </div>
                       </button>

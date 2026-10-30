@@ -22,6 +22,7 @@ from app_backend.errors import APIError
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TOKEN_EXPIRY_SECONDS = 86400  # 24 hours
+SESSION_MAX_SECONDS = 7 * 86400  # refresh cannot extend a session beyond 7 days from login
 
 
 def _validate_registration(payload: dict) -> tuple[str, str, str]:
@@ -68,13 +69,15 @@ def _b64url_decode(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * padding)
 
 
-def create_token(user_id: int, secret: str) -> str:
-    """Create a simple HMAC-SHA256 JWT."""
+def create_token(user_id: int, secret: str, session_started: int | None = None) -> str:
+    """Create a simple HMAC-SHA256 JWT. `session_started` keeps the original login time across refreshes."""
     header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    now = int(time.time())
     payload = _b64url_encode(json.dumps({
         "sub": user_id,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + TOKEN_EXPIRY_SECONDS,
+        "iat": now,
+        "exp": now + TOKEN_EXPIRY_SECONDS,
+        "sst": session_started if session_started is not None else now,
     }).encode())
     signing_input = f"{header}.{payload}"
     signature = _b64url_encode(
@@ -91,12 +94,15 @@ def decode_token(token: str, secret: str) -> dict:
     header_b64, payload_b64, signature_b64 = parts
     signing_input = f"{header_b64}.{payload_b64}"
     expected_sig = hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest()
-    actual_sig = _b64url_decode(signature_b64)
+    try:
+        actual_sig = _b64url_decode(signature_b64)
+    except (ValueError, TypeError):
+        raise APIError(401, "invalid_token", "Authentication token is malformed.") from None
     if not hmac.compare_digest(expected_sig, actual_sig):
         raise APIError(401, "invalid_token", "Authentication token signature is invalid.")
     try:
         payload = json.loads(_b64url_decode(payload_b64))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (ValueError, TypeError, UnicodeDecodeError):
         raise APIError(401, "invalid_token", "Authentication token payload is malformed.")
     if payload.get("exp", 0) < time.time():
         raise APIError(401, "token_expired", "Authentication token has expired. Please log in again.")
@@ -118,6 +124,16 @@ def login_required(f):
         user_id = payload.get("sub")
         if not isinstance(user_id, int):
             raise APIError(401, "invalid_token", "Token does not contain a valid user identifier.")
+        # A signed token stays valid for its lifetime even if its user is no longer in the database
+        # this server uses (for example after switching database files). Reject it explicitly instead
+        # of letting an insert fail on the foreign key.
+        from app_backend.database import Database
+        db = current_app.extensions.get("db")
+        if db is None:
+            db = Database(current_app.config["DATABASE_PATH"])
+            current_app.extensions["db"] = db
+        if db.get_user_by_id(user_id) is None:
+            raise APIError(401, "user_not_found", "This session belongs to an account that is not in the database this server is using. Log in again.")
         g.user_id = user_id
         return f(*args, **kwargs)
     return decorated

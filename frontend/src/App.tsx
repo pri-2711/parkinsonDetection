@@ -9,6 +9,7 @@ import { Speech } from './pages/Speech';
 import { Tremor } from './pages/Tremor';
 import { Results } from './pages/Results';
 import { History } from './pages/History';
+import { Research } from './pages/Research';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
           <Route path="tremor/:id" element={<Tremor />} />
           <Route path="results/:id" element={<Results />} />
           <Route path="history" element={<History />} />
+          <Route path="research" element={<Research />} />
         </Route>
       </Routes>
     </BrowserRouter>
