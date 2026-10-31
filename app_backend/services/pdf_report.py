@@ -11,6 +11,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app_backend.services.assessment_summary import build_assessment_summary
+from app_backend.services.speech_modes import speech_result_view
 
 MODALITY_NAMES = {"tremor": "Tremor", "spiral": "Handwriting / spiral", "speech": "Speech"}
 
@@ -462,8 +463,9 @@ def generate_assessment_pdf(
     spch_outcome = speech_step.get("outcome", {})
     spch_error = speech_step.get("error")
 
-    recording_mode = spch_outcome.get("recording_mode") if isinstance(spch_outcome, dict) else None
-    if recording_mode == "reading":
+    # The three states are reported separately: extraction, prediction and the reason a prediction is missing.
+    view = speech_result_view(speech_step)
+    if view["recording_mode"] == "reading":
         passage_text = (
             "<b>Standardized Reading Passage:</b><br/>"
             "<i>\"Today is a pleasant day. I am speaking at my normal pace and volume. "
@@ -471,33 +473,32 @@ def generate_assessment_pdf(
             "After finishing the passage, I will pause briefly before ending the recording.\"</i>"
         )
         story.append(Paragraph(passage_text, body_style))
-    elif recording_mode == "sustained_vowel":
-        story.append(Paragraph("<b>Recording mode:</b> Sustained /a/ vowel. This is not equivalent to the reading-passage task.", body_style))
+    story.append(Paragraph(f"<b>Recording task:</b> {escape(view['recording_mode_label'] or 'not recorded')}", body_style))
     story.append(Spacer(1, 4))
 
-    if spch_outcome and "probability" in spch_outcome:
-        spch_prob = spch_outcome["probability"]
-        spch_pred = "Parkinson's Class" if spch_outcome.get("prediction") == 1 else "Control Class"
-        spch_text = (
-            f"<b>Model Result:</b> {spch_pred} (Probability: <b>{spch_prob * 100:.2f}%</b>) | "
-            f"<b>Model:</b> speech_audio_v2 {spch_outcome.get('recording_mode', '')} SVM (trained on labelled raw audio; "
-            "validation reported in Section 6)."
+    if view["feature_extraction"] == "completed":
+        extraction_text = (
+            f"<b>Feature extraction:</b> completed, {view['feature_count']} {escape(str(view['feature_schema']))} "
+            "features (no audio file was retained)."
         )
-        story.append(Paragraph(spch_text, body_style))
+    elif view["feature_extraction"] == "failed":
+        extraction_text = f"<b>Feature extraction:</b> failed. {escape(str(spch_error or ''))}"
     else:
-        extraction_summary = ""
-        if spch_outcome and spch_outcome.get("feature_extraction") == "completed":
-            extraction_summary = (
-                f" Audio features extracted: {spch_outcome.get('feature_count', 'N/A')} columns in "
-                f"{spch_outcome.get('feature_schema', 'an experimental schema')}; no audio file was retained."
-            )
-        spch_msg = (
-            f"<b>Status:</b> {spch_status.capitalize()}. "
-            f"{spch_error or 'No compatible trained speech model is available for this recording mode.'}{extraction_summary} "
-            "The legacy classifier was not used with an incompatible feature schema."
-        )
-        story.append(Paragraph(spch_msg, body_style))
+        extraction_text = "<b>Feature extraction:</b> not run."
+    story.append(Paragraph(extraction_text, body_style))
 
+    if view["prediction"] == "completed":
+        predicted_class = "Parkinson's class" if view["prediction_value"] == 1 else "Control class"
+        prediction_text = (
+            f"<b>Prediction:</b> {predicted_class} "
+            f"(probability <b>{view['probability'] * 100:.2f}%</b>) from the {escape(view['model'] or '')}. "
+            "Research output only; validation is reported in Section 6."
+        )
+    elif view["prediction"] == "unavailable":
+        prediction_text = f"<b>Prediction:</b> unavailable. {escape(view['prediction_reason'] or '')}"
+    else:
+        prediction_text = f"<b>Prediction:</b> not run. {escape(view['prediction_reason'] or '')}"
+    story.append(Paragraph(prediction_text, body_style))
     story.append(Spacer(1, 14))
 
     # Section 4: Telemonitoring Severity Regression Limitation Note

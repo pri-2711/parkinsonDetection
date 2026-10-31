@@ -18,8 +18,18 @@ export interface SpeechStepLike {
 
 export interface SpeechSummary {
   tone: 'success' | 'warning' | 'error' | 'muted';
+  title: string;
+  modeLabel: string | null;
   text: string;
+  // Feature extraction and prediction are separate lines; null when the state has nothing to report.
+  extractionText: string | null;
+  predictionText: string | null;
+  predictionState: 'completed' | 'unavailable' | 'not_run';
 }
+
+export const SPEECH_MODE_LABELS: Record<string, string>;
+
+export function speechModeLabel(mode: string | undefined | null): string | null;
 
 export function speechStepSummary(step: SpeechStepLike | null | undefined): SpeechSummary;
 

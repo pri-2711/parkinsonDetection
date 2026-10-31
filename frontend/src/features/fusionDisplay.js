@@ -17,43 +17,84 @@ export function formatPercent(value, digits = 1) {
 export const SPEECH_BLOCKER_MESSAGES = {
   speech_audio_v2_model_not_trained:
     'No trained speech_audio_v2 model exists for this recording mode, so no prediction was made.',
+  speech_audio_v2_model_invalid:
+    'The trained model file for this recording mode failed validation, so no prediction was made.',
 };
 
-// Returns the user-facing state of a saved speech step. The error lives on the
-// step, while feature details live on the outcome, so both are read here.
+export const SPEECH_MODE_LABELS = {
+  reading: 'Reading passage',
+  sustained_vowel: 'Sustained "ah" vowel',
+};
+
+export function speechModeLabel(mode) {
+  return SPEECH_MODE_LABELS[mode] ?? null;
+}
+
+// Returns the user-facing state of a saved speech step. Feature extraction and prediction are reported as
+// separate states, so features are never shown as a classification result. The title follows the recording
+// mode saved with the step, not a fixed label.
 export function speechStepSummary(step) {
   if (!step || typeof step !== 'object') {
-    return { tone: 'muted', text: 'No speech sample has been submitted yet.' };
+    return {
+      tone: 'muted', title: 'Speech', modeLabel: null,
+      text: 'No speech sample has been submitted yet.',
+      extractionText: null, predictionText: null, predictionState: 'not_run',
+    };
   }
   const outcome = step.outcome || {};
+  const modeLabel = speechModeLabel(outcome.recording_mode);
+  const title = modeLabel ? `Speech (${modeLabel})` : 'Speech';
   const featureCount = outcome.feature_count ?? 0;
   const schema = outcome.feature_schema || 'speech_audio_v2';
-  const mode = outcome.recording_mode || 'recording';
+  // An unavailable step only exists after features were extracted, so it counts as extraction completed.
+  const extracted = outcome.feature_extraction === 'completed' || step.status === 'unavailable';
+
+  let extractionText = 'Feature extraction not run.';
+  if (extracted) {
+    extractionText = `Feature extraction completed: ${featureCount} ${schema} features (audio not retained).`;
+  } else if (step.status === 'failed') {
+    extractionText = 'Feature extraction failed.';
+  }
 
   if (step.status === 'completed' && outcome.model_verified === true && typeof outcome.probability === 'number') {
+    const modelName = modeLabel ? `${modeLabel.toLowerCase()} model` : 'speech model';
     return {
-      tone: 'success',
-      text: `Experimental prediction: ${formatPercent(outcome.probability)} model probability (reading-passage model, 37-participant validation). Research output only; not a diagnosis.`,
+      tone: 'success', title, modeLabel, extractionText,
+      predictionState: 'completed',
+      predictionText: `Prediction completed: ${formatPercent(outcome.probability)} probability from the ${modelName}, a 37-participant validation model. Research output only; not a diagnosis.`,
+      text: `Experimental prediction: ${formatPercent(outcome.probability)} model probability. Research output only; not a diagnosis.`,
     };
   }
   if (step.status === 'unavailable') {
     const blocker = SPEECH_BLOCKER_MESSAGES[outcome.blocker_code]
       || 'Prediction is unavailable for this recording mode.';
     return {
-      tone: 'warning',
-      text: `${featureCount} ${schema} features extracted from a ${mode} recording (audio not retained). ${blocker}`,
+      tone: 'warning', title, modeLabel, extractionText,
+      predictionState: 'unavailable',
+      predictionText: `Prediction unavailable: ${blocker}`,
+      text: `${extractionText} ${blocker}`,
     };
   }
   if (step.status === 'failed') {
+    const message = `Audio processing failed${step.error ? `: ${step.error}` : '.'} Submit a new recording to try again.`;
     return {
-      tone: 'error',
-      text: `Audio processing failed${step.error ? `: ${step.error}` : '.'} Submit a new recording to try again.`,
+      tone: 'error', title, modeLabel, extractionText: null,
+      predictionState: 'not_run', predictionText: 'Prediction not run.',
+      text: message,
     };
   }
   if (step.status === 'processing') {
-    return { tone: 'muted', text: 'Processing the submitted recording…' };
+    return {
+      tone: 'muted', title, modeLabel, extractionText: null,
+      predictionState: 'not_run', predictionText: null,
+      text: 'Processing the submitted recording…',
+    };
   }
-  return { tone: 'muted', text: 'No speech sample has been submitted yet.' };
+  return {
+    tone: 'muted', title, modeLabel, extractionText: null,
+    predictionState: 'not_run', predictionText: null,
+    text: 'No speech sample has been submitted yet.',
+  };
 }
 
 export function speechStatusLabel(status) {

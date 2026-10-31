@@ -16,6 +16,7 @@ from app_backend.services.research_insights import build_research_insights
 from app_backend.services.sessions import AssessmentSessionStore
 from app_backend.services.trajectory_features import extract_tablet_trajectory_features
 from app_backend.services.audio_preprocessing import validate_wav
+from app_backend.services.speech_modes import normalise_recording_mode
 from app_backend.services.acoustic_features import AcousticFeatureExtractor
 from app_backend.services.spiral_preprocessing import validate_spiral_video
 from app_backend.services.spiral_video_analysis import analyze_spiral_video
@@ -556,8 +557,8 @@ def predict_speech_step(assessment_id: int):
     prior_outcome = dict(prior_step.get("outcome") or {})
     prior_step.update({"status": "processing", "outcome": prior_outcome, "error": None})
     repo.update_assessment_step(assessment_id, g.user_id, "speech", prior_step)
-    mode = request.form.get("mode", "")
     try:
+        mode = normalise_recording_mode(request.form.get("mode"))
         uploaded = request.files.get("file")
         if not isinstance(uploaded, FileStorage) or not uploaded.filename:
             raise APIError(400, "missing_audio", "Attach the recording as multipart field 'file'.")

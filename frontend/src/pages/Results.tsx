@@ -236,8 +236,15 @@ export function Results() {
           )}
         </ModalityCard>
 
-        <ModalityCard title="Speech (reading passage)" status={steps.speech.status}>
-          <p style={{ margin: 0, color: TONE_COLOR[speech.tone], fontSize: '0.9rem' }}>{speech.text}</p>
+        <ModalityCard title={speech.title} status={steps.speech.status}>
+          {speech.extractionText || speech.predictionText ? (
+            <>
+              {speech.extractionText && <p style={{ margin: 0, color: TONE_COLOR[speech.tone], fontSize: '0.9rem' }}>{speech.extractionText}</p>}
+              {speech.predictionText && <p style={{ margin: '0.3rem 0 0', color: TONE_COLOR[speech.tone], fontSize: '0.9rem' }}>{speech.predictionText}</p>}
+            </>
+          ) : (
+            <p style={{ margin: 0, color: TONE_COLOR[speech.tone], fontSize: '0.9rem' }}>{speech.text}</p>
+          )}
           {speechFeatures && (
             <details style={{ marginTop: '0.6rem' }}>
               <summary>Extracted features ({Object.keys(speechFeatures).length})</summary>

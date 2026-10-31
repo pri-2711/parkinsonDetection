@@ -151,8 +151,8 @@ export function Speech() {
         gender_code: genderCode,
         ...(recordingMode === 'reading' ? { passage_version: PASSAGE_VERSION, passage_text: READING_PASSAGE } : {}),
       });
+      // The result is shown on this page straight away. Final Results is opened only on request.
       setSavedSpeechStep({ status: response.status, outcome: response.outcome, error: null });
-      navigate(`/results/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Speech processing error');
     } finally {
@@ -189,7 +189,7 @@ export function Speech() {
           <label htmlFor="speech-mode" style={{ display: 'block', fontWeight: 600, marginBottom: '0.4rem' }}>Recording task</label>
           <select id="speech-mode" value={recordingMode} onChange={(event) => { setRecordingMode(event.target.value as 'reading' | 'sustained_vowel'); setRecordedBlob(null); setFile(null); setAudioUrl(null); setError(''); }}>
             <option value="reading">Read the passage</option>
-            <option value="sustained_vowel">Sustained “ah” (features only)</option>
+            <option value="sustained_vowel">Sustained "ah" (features only)</option>
           </select>
         </div>
         <div style={{ marginBottom: '1rem' }}>
@@ -212,7 +212,7 @@ export function Speech() {
           </p>
         </div>}
         {recordingMode === 'sustained_vowel' && <div style={{ backgroundColor: '#F4F7F2', border: '1px solid var(--sage-light)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
-          Hold a steady “ah” for at least five seconds. This task produces features only; no prediction is available for it.
+          Hold a steady "ah" for at least five seconds. This task produces features only; no prediction is available for it.
         </div>}
 
         {/* Input Method Selector Tabs */}
@@ -241,7 +241,7 @@ export function Speech() {
               <div style={{ marginBottom: '1rem' }}>
                 <span style={{ fontSize: '2.5rem' }}>{recording ? <span aria-label="Recording" style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', background: '#B93838' }} /> : '🎙️'}</span>
                 <p style={{ fontWeight: '600', color: 'var(--text-dark)', marginTop: '0.5rem' }}>
-                  {recording ? `Recording in progress (${recordingDuration}s)… ${recordingMode === 'reading' ? 'Speak the passage clearly.' : 'Sustain a steady “ah” vowel.'}` : recordedBlob ? `Recording captured (${recordingDuration}s)` : 'Click to begin microphone recording'}
+                  {recording ? `Recording in progress (${recordingDuration}s)… ${recordingMode === 'reading' ? 'Speak the passage clearly.' : 'Sustain a steady "ah" vowel.'}` : recordedBlob ? `Recording captured (${recordingDuration}s)` : 'Click to begin microphone recording'}
                 </p>
               </div>
 
@@ -314,10 +314,21 @@ export function Speech() {
         </form>
         {savedSpeechStep && (
           <section aria-live="polite" style={{ marginTop: '1.25rem', padding: '1rem', background: '#FAFAF7', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
-            <h3 style={{ marginTop: 0, color: 'var(--sage-dark)' }}>
-              Saved speech result: {speechStatusLabel(savedSpeechStep.status)}
-            </h3>
-            <p>{speechStepSummary(savedSpeechStep).text}</p>
+            {(() => {
+              const view = speechStepSummary(savedSpeechStep);
+              return (
+                <>
+                  <h3 style={{ marginTop: 0, color: 'var(--sage-dark)' }}>
+                    {view.title}: {speechStatusLabel(savedSpeechStep.status)}
+                  </h3>
+                  {view.extractionText && <p style={{ margin: '0 0 0.4rem' }}>{view.extractionText}</p>}
+                  <p style={{ margin: '0 0 0.4rem' }}>{view.predictionText ?? view.text}</p>
+                </>
+              );
+            })()}
+            <button type="button" className="btn btn-secondary" style={{ marginTop: '0.75rem' }} onClick={() => navigate(`/results/${id}`)}>
+              Open Final Results
+            </button>
             {savedSpeechStep.outcome?.feature_values && <details><summary>View extracted feature values</summary><dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.4rem 1rem' }}>{Object.entries(savedSpeechStep.outcome.feature_values).map(([name, value]) => <div key={name}><dt style={{ fontWeight: 600 }}>{name}</dt><dd style={{ margin: 0 }}>{typeof value === 'number' ? value.toPrecision(6) : String(value)}</dd></div>)}</dl></details>}
           </section>
         )}

@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from app_backend.services.speech_modes import recording_mode_label, speech_result_view
+
 MODALITY_ORDER = ("tremor", "spiral", "speech")
 
 MODALITY_LABELS = {
@@ -43,9 +45,10 @@ def _observations(modality: str, step: dict[str, Any]) -> list[str]:
     outcome = step.get("outcome") or {}
     notes: list[str] = []
     if modality == "speech" and outcome.get("feature_extraction") == "completed":
+        mode_label = recording_mode_label(outcome.get("recording_mode")) or "unrecorded-mode"
         notes.append(
             f"{outcome.get('feature_count', 0)} {outcome.get('feature_schema', 'speech_audio_v2')} features extracted "
-            f"from a {outcome.get('recording_mode', 'unknown')} recording (audio not retained)."
+            f"from a {mode_label.lower()} recording (audio not retained)."
         )
     if modality == "spiral":
         canvas = outcome.get("canvas_telemetry")
@@ -63,8 +66,9 @@ def _prediction_reason(modality: str, step: dict[str, Any]) -> str:
     if _verified_probability(step) is not None:
         return "Verified classifier probability saved."
     if modality == "speech":
-        if status == "unavailable" or outcome.get("prediction_status") == "unavailable":
-            return "Unavailable: no trained speech_audio_v2 model exists for this recording mode."
+        view = speech_result_view(step)
+        if view["prediction"] == "unavailable":
+            return f"Unavailable: {view['prediction_reason']}"
         if status == "failed":
             return "Not predicted: audio processing failed."
     if modality == "spiral" and status == "unavailable":
@@ -100,6 +104,7 @@ def build_assessment_summary(assessment: dict[str, Any], now: datetime | None = 
             "probability": probability,
             "prediction_note": _prediction_reason(modality, step),
             "observations": observations,
+            "speech_result": speech_result_view(step) if modality == "speech" else None,
             "contributes_to_fusion": contributes,
             "error": step.get("error"),
         })

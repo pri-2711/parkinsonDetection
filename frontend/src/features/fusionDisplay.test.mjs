@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fusionDisplayMode, formatPercent, speechStepSummary, speechStatusLabel } from './fusionDisplay.js';
+import { fusionDisplayMode, formatPercent, speechStepSummary, speechStatusLabel, speechModeLabel } from './fusionDisplay.js';
 
 test('fused probability is shown only for a single contributing model', () => {
   assert.equal(fusionDisplayMode({ available_modalities: ['speech'] }), 'single');
@@ -28,7 +28,9 @@ test('unavailable speech is reported as extracted features without a prediction'
     },
   });
   assert.equal(summary.tone, 'warning');
-  assert.match(summary.text, /45 speech_audio_v2 features extracted from a sustained_vowel recording/);
+  assert.equal(summary.title, 'Speech (Sustained "ah" vowel)');
+  assert.match(summary.extractionText, /Feature extraction completed: 45 speech_audio_v2 features/);
+  assert.match(summary.predictionText, /^Prediction unavailable: No trained speech_audio_v2 model exists/);
   assert.match(summary.text, /No trained speech_audio_v2 model exists/);
   assert.doesNotMatch(summary.text, /legacy text/);
 });
@@ -54,4 +56,29 @@ test('empty and processing speech states have plain messages', () => {
   assert.match(speechStepSummary({ status: 'processing' }).text, /Processing/);
   assert.equal(speechStatusLabel('unavailable'), 'Features only');
   assert.equal(speechStatusLabel(undefined), 'Not submitted');
+});
+
+test('the speech title follows the saved recording mode', () => {
+  const reading = speechStepSummary({ status: 'completed', outcome: { recording_mode: 'reading', feature_extraction: 'completed', feature_count: 45, probability: 0.31, model_verified: true } });
+  assert.equal(reading.title, 'Speech (Reading passage)');
+  assert.equal(reading.predictionState, 'completed');
+  assert.match(reading.predictionText, /^Prediction completed: 31\.0% probability from the reading passage model/);
+
+  const vowel = speechStepSummary({ status: 'unavailable', outcome: { recording_mode: 'sustained_vowel', feature_extraction: 'completed', feature_count: 45, blocker_code: 'speech_audio_v2_model_not_trained' } });
+  assert.equal(vowel.title, 'Speech (Sustained "ah" vowel)');
+  assert.doesNotMatch(vowel.title, /reading/i);
+  assert.equal(vowel.predictionState, 'unavailable');
+  assert.doesNotMatch(vowel.extractionText, /Prediction/);
+});
+
+test('feature extraction and prediction are never merged into one line for a sustained vowel', () => {
+  const vowel = speechStepSummary({ status: 'unavailable', outcome: { recording_mode: 'sustained_vowel', feature_extraction: 'completed', feature_count: 45, blocker_code: 'speech_audio_v2_model_not_trained' } });
+  assert.notEqual(vowel.extractionText, vowel.predictionText);
+  assert.doesNotMatch(vowel.predictionText, /features/);
+});
+
+test('speech mode labels are only known modes', () => {
+  assert.equal(speechModeLabel('reading'), 'Reading passage');
+  assert.equal(speechModeLabel('Reading'), null);
+  assert.equal(speechModeLabel(undefined), null);
 });
