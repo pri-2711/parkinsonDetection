@@ -61,7 +61,7 @@ export function speechStepSummary(step) {
     return {
       tone: 'success', title, modeLabel, extractionText,
       predictionState: 'completed',
-      predictionText: `Prediction completed: ${formatPercent(outcome.probability)} probability from the ${modelName}, a 37-participant validation model. Research output only; not a diagnosis.`,
+      predictionText: `Prediction completed: ${formatPercent(outcome.probability)} probability from the ${modelName}. Research output only; not a diagnosis.`,
       text: `Experimental prediction: ${formatPercent(outcome.probability)} model probability. Research output only; not a diagnosis.`,
     };
   }

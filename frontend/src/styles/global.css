@@ -18,6 +18,8 @@
   --warning: #B45309;          /* Accessible amber */
   --warning-bg: #FEF3C7;
   --focus-ring: rgba(82, 107, 74, 0.4);
+  /* Larger theme-coloured chevron used by dropdowns and disclosure headers. */
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23526B4A' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 * {
@@ -292,9 +294,9 @@ select {
   appearance: none;
   -webkit-appearance: none;
   background-color: var(--white);
-  background-image: linear-gradient(45deg, transparent 50%, var(--sage-green) 50%), linear-gradient(135deg, var(--sage-green) 50%, transparent 50%);
-  background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
-  background-size: 5px 5px, 5px 5px;
+  background-image: var(--chevron-down);
+  background-position: right 0.7rem center;
+  background-size: 1.15rem 1.15rem;
   background-repeat: no-repeat;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
@@ -342,4 +344,54 @@ select:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .modality-card { transition: none; }
+}
+
+/* Disclosure (accordion) headers: the whole bar is the click target, with a larger chevron that turns when open. */
+details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background-color: var(--cream);
+  color: var(--sage-dark);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: var(--chevron-down) center / contain no-repeat;
+  transition: transform 0.18s ease;
+}
+
+details[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+details > summary:hover {
+  background-color: #FFFFFF;
+  border-color: var(--sage-light);
+}
+
+details > summary:focus-visible {
+  outline: none;
+  border-color: var(--sage-green);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+details[open] > summary {
+  margin-bottom: 0.6rem;
 }

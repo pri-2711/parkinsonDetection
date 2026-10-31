@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { assessmentsApi } from '../api/assessments';
+import { SpeechFeatureGroups } from '../components/SpeechFeatureGroups';
 import { Icon } from '../components/Icon';
-import { speechStatusLabel, speechStepSummary } from '../features/fusionDisplay.js';
+import { formatPercent, speechStatusLabel, speechStepSummary } from '../features/fusionDisplay.js';
 
 const READING_PASSAGE = 'Today is a pleasant day. I am speaking at my normal pace and volume. I will read each sentence clearly and naturally, without rushing. After finishing the passage, I will pause briefly before ending the recording.';
 const PASSAGE_VERSION = '1.0';
@@ -177,10 +178,9 @@ export function Speech() {
           <details style={{ marginTop: '0.75rem' }}>
             <summary>About the experimental model</summary>
             <ul style={{ fontSize: '0.88rem', color: 'var(--text-light)' }}>
-              <li>The reading-passage model was trained on 37 public recordings (21 control, 16 Parkinson's). Its cross-validated ROC-AUC is 0.642 ± 0.144, close to the majority-class baseline of 0.605.</li>
-              <li>It was not tested on recordings made in this app. Its passage, device and language differ from the training recordings.</li>
-              <li>Sustained-vowel recordings have no trained model; they produce features only.</li>
-              <li>Audio is not stored. Only the extracted features and the score are saved to the assessment.</li>
+              <li>This is a research prototype. Results are experimental and are not a diagnosis.</li>
+              <li>Sustained-vowel recordings have no trained model, so they show measurements only.</li>
+              <li>Audio is not stored. Only the extracted measurements and the result are saved to the assessment.</li>
             </ul>
           </details>
         </div>
@@ -312,26 +312,49 @@ export function Speech() {
             {submitting ? 'Validating Audio & Processing…' : 'Submit Speech Sample'}
           </button>
         </form>
-        {savedSpeechStep && (
-          <section aria-live="polite" style={{ marginTop: '1.25rem', padding: '1rem', background: '#FAFAF7', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
-            {(() => {
-              const view = speechStepSummary(savedSpeechStep);
-              return (
+        {savedSpeechStep && (() => {
+          const view = speechStepSummary(savedSpeechStep);
+          const values = (savedSpeechStep.outcome?.feature_values ?? null) as Record<string, unknown> | null;
+          const probability = savedSpeechStep.outcome?.probability;
+          return (
+            <section aria-live="polite" style={{ marginTop: '1.25rem', padding: '1rem', background: '#FAFAF7', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
+              <h3 style={{ marginTop: 0, color: 'var(--sage-dark)' }}>
+                {view.title}: {speechStatusLabel(savedSpeechStep.status)}
+              </h3>
+
+              {view.predictionState === 'completed' && typeof probability === 'number' && (
+                <div style={{ padding: '0.8rem 0.95rem', background: 'var(--success-bg)', border: '1px solid var(--border-subtle)', borderRadius: 6, marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-light)' }}>Prediction probability</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--success)' }}>{formatPercent(probability)}</div>
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.88rem', color: 'var(--text-dark)' }}>{view.predictionText}</p>
+                  <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem', color: 'var(--text-light)' }}>Research output only. Not a diagnosis.</p>
+                </div>
+              )}
+              {view.predictionState === 'unavailable' && (
+                <div role="status" style={{ padding: '0.8rem 0.95rem', background: 'var(--warning-bg)', border: '1px solid var(--border-subtle)', borderRadius: 6, marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--warning)' }}>Prediction unavailable</div>
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.88rem', color: 'var(--text-dark)' }}>
+                    The model for this recording mode is not trained, so no prediction was made. The measurements below are extracted features only.
+                  </p>
+                </div>
+              )}
+              {view.predictionState === 'not_run' && view.text && (
+                <p style={{ margin: '0 0 0.6rem' }}>{view.text}</p>
+              )}
+              {view.extractionText && <p style={{ margin: '0 0 0.6rem', fontSize: '0.92rem' }}>{view.extractionText}</p>}
+
+              {values && (
                 <>
-                  <h3 style={{ marginTop: 0, color: 'var(--sage-dark)' }}>
-                    {view.title}: {speechStatusLabel(savedSpeechStep.status)}
-                  </h3>
-                  {view.extractionText && <p style={{ margin: '0 0 0.4rem' }}>{view.extractionText}</p>}
-                  <p style={{ margin: '0 0 0.4rem' }}>{view.predictionText ?? view.text}</p>
+                  <h3 style={{ margin: '1.1rem 0 0.25rem', color: 'var(--sage-dark)', fontSize: '1.05rem' }}>Extracted acoustic measurements</h3>
+                  <p style={{ margin: '0 0 0.8rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                    Values exactly as extracted from this recording. They are not clinical thresholds.
+                  </p>
+                  <SpeechFeatureGroups values={values} />
                 </>
-              );
-            })()}
-            <button type="button" className="btn btn-secondary" style={{ marginTop: '0.75rem' }} onClick={() => navigate(`/results/${id}`)}>
-              Open Final Results
-            </button>
-            {savedSpeechStep.outcome?.feature_values && <details><summary>View extracted feature values</summary><dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.4rem 1rem' }}>{Object.entries(savedSpeechStep.outcome.feature_values).map(([name, value]) => <div key={name}><dt style={{ fontWeight: 600 }}>{name}</dt><dd style={{ margin: 0 }}>{typeof value === 'number' ? value.toPrecision(6) : String(value)}</dd></div>)}</dl></details>}
-          </section>
-        )}
+              )}
+            </section>
+          );
+        })()}
       </div>
     </div>
   );

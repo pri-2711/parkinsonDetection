@@ -9,6 +9,7 @@ Feature extraction and prediction are separate states everywhere, so features ar
 from __future__ import annotations
 
 import io
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -247,3 +248,18 @@ class SpeechResultRoutingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpeechFeatureDisplayCoverageTests(unittest.TestCase):
+    """The Speech page shows every extracted feature, and only the names the backend returns."""
+
+    def test_every_extracted_feature_is_displayed_in_a_group(self):
+        from app_backend.services.acoustic_features import SPEECH_V2_FEATURES
+
+        source = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "components" / "SpeechFeatureGroups.tsx").read_text(encoding="utf-8")
+        literal_keys = set(re.findall(r"key: '(audio_v2_[a-z0-9_]+)'", source))
+        generated_keys = {f"audio_v2_mfcc{i}_mean" for i in range(13)} | {f"audio_v2_delta{i}_mean" for i in range(13)}
+        displayed = literal_keys | generated_keys
+        self.assertEqual(sorted(set(SPEECH_V2_FEATURES) - displayed), [], "extracted features missing from the page")
+        self.assertEqual(sorted(displayed - set(SPEECH_V2_FEATURES)), [], "page shows names the backend does not return")
+        self.assertEqual(len(SPEECH_V2_FEATURES), 45)
