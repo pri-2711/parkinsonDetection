@@ -1,57 +1,68 @@
 """Image-based observations from a spiral-writing video (visual analysis only, not a diagnostic model).
 
-Two independent detectors run on every frame:
+Three analyses run on the same video. Each one is a separate detector and is drawn separately:
 
-BLUE - ink and strokes. Pen ink is found from its colour and local contrast: a pixel is ink when it is
-  darker than its local background (black-hat), has a blue-violet hue and is dark. Skin-coloured pixels
-  from the hand detector are excluded. Only components above a minimum size are kept. Measurements come
-  from the ink on the final frame: coverage, stroke width and its variation, continuity, and ink growth.
+INK (spiral_ink.py). The first frame is the reference. Every later frame is aligned to it with paper features
+  (ORB and a RANSAC homography), so a moving camera does not look like new ink. Ink is new only when it is stable
+  across frames and clearly darker than the printed mark at the same place on the reference paper. Printed
+  text, boxes and ruling are therefore not counted. The new ink is accumulated in reference coordinates and
+  drawn in blue on each frame. Frames where the paper cannot be aligned add no ink and are reported.
 
-RED - hand. The hand is found as the largest skin-coloured region (YCrCb thresholds), with its own
-  centroid, bounding box and contour. It is not derived from the ink detector. Fingertip count is a rough
-  convexity-defect estimate. Finger landmarks and grip posture are not measured.
+HAND (hand_landmarks.py). MediaPipe Hands gives 21 landmarks per frame, run in a separate environment
+  (HAND_LANDMARK_PYTHON, or the repository's .venv-mediapipe). The hand outline is drawn in red and the
+  landmarks in green. Finger, grip and movement values use only frames where the landmarks are visible.
 
-The annotated video outlines the blue ink and red hand regions, shows a legend, and keeps the original
-video separate. Nothing is drawn when a detector is not confident, and the reports say when a measurement
-is unavailable.
+SPIRAL (spiral_ink.py). The accumulated new ink is separated from other handwriting and fitted to an
+  Archimedean spiral: turn spacing, deviation, radius variation and angular coverage. Values are in reference
+  frame pixels, without perspective correction.
+
+The annotated WebM keeps the original duration and frames, and shows the three overlays with a legend. Anything
+not detected reliably is left out and listed as unavailable with a reason.
 """
 from __future__ import annotations
 
-import math
 import tempfile
 from pathlib import Path
 
 import numpy as np
 
 from app_backend.errors import APIError
-
-INK_HUE_RANGE = (95, 135)      # OpenCV hue units: blue to violet
-INK_BLACKHAT_MIN = 25          # gray levels darker than the local background
-INK_VALUE_MAX = 160            # dark pixels only
-INK_MIN_COMPONENT = 12         # pixels
-HAND_MIN_AREA_FRACTION = 0.03  # hand region must cover at least 3% of the frame
-HAND_MIN_SOLIDITY = 0.45       # below this the skin region is too fragmented to report
-RADIAL_BINS = 72
-
-UNAVAILABLE = {
-    "finger_landmarks": "Not measured: no hand-landmark model is installed in this server, so individual finger positions are not reported.",
-    "grip_posture": "Not measured: pen-holding posture needs finger landmarks, which are not available here.",
-    "pen_tip_tracking": "Not measured: the pen tip cannot be separated from the hand reliably in this pipeline.",
-    "pressure": "Not measured: pressure needs a digitizer. Ink darkness in an image is not physical pressure.",
-    "grip_force": "Not measured: grip force needs instrumented equipment.",
-    "grip_angle": "Not measured: a calibrated grip angle needs a digitizer or instrumented pen.",
-    "fitted_spiral_deviation": "Not measured: fitting an ideal spiral needs a calibrated, perspective-corrected view.",
-}
+from app_backend.services import hand_landmarks as hands_mod
+from app_backend.services import spiral_ink as ink_mod
 
 # Clients use this to detect a server that still runs older analysis code.
-ANALYSIS_VERSION = "ink-hand-v2"
+ANALYSIS_VERSION = "ink-hand-v4"
 
 LIMITATIONS = [
     "Pixel measurements depend on camera distance, angle, focus and lighting. They are not calibrated physical units.",
-    "Blue ink detection assumes blue or violet pen ink. Black or grey ink is not detected by this colour rule.",
-    "Skin detection depends on skin tone and lighting. Objects with similar colour can be included in the red region.",
+    "Ink darkness and stroke width are image measurements. They are not pen pressure.",
+    "New ink is found against the first frame. Frames where the paper cannot be aligned add no ink, so the blue overlay can skip them.",
+    "The pen body and tip are not tracked. Drawing timing uses the centroid of newly drawn ink, which lags the pen by a few frames.",
+    "Hand landmarks come from a general hand model. Fingers cut off by the frame edge are not measured.",
+    "The pen-holding estimate is a heuristic from one camera view and is not a validated grip classification.",
+    "The spiral fit assumes a flat view of the paper. No perspective correction is applied.",
     "These observations are research descriptors, not a Parkinson's measurement or a diagnosis.",
 ]
+
+SECTION_TITLES = {
+    "ink_and_strokes": "Ink & Stroke Analysis",
+    "hand_and_grip": "Hand & Grip Analysis",
+    "spiral_geometry": "Spiral Geometry Analysis",
+}
+
+INK_COLOUR_NAMES = {
+    "blue_violet": "blue / violet",
+    "red": "red",
+    "black_or_grey": "black / grey",
+    "other_colour": "other colour",
+}
+
+# Overlay colours, BGR. Each overlay is drawn by its own detector.
+BLUE = (255, 120, 20)
+GREEN = (60, 200, 60)
+RED = (40, 40, 230)
+# Share of frames the paper must align on before the ink values are considered complete.
+MIN_ALIGNED_SHARE = 0.8
 
 
 def _open(path: str):
@@ -63,59 +74,168 @@ def _open(path: str):
     return cap
 
 
-def _ink_mask(frame_bgr, skin_mask):
-    import cv2
-    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-    blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
-    hue, value = hsv[..., 0], hsv[..., 2]
-    mask = ((blackhat > INK_BLACKHAT_MIN) & (hue >= INK_HUE_RANGE[0]) & (hue <= INK_HUE_RANGE[1]) & (value <= INK_VALUE_MAX))
-    mask = mask.astype(np.uint8) * 255
-    if skin_mask is not None:
-        protected = cv2.dilate(skin_mask, np.ones((7, 7), np.uint8))
-        mask[protected > 0] = 0
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    keep = np.zeros(count, bool)
-    keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= INK_MIN_COMPONENT
-    return (keep[labels]).astype(np.uint8) * 255
-
-
-def _hand_region(frame_bgr):
-    """Largest skin-coloured region. Returns (mask, contour, area_fraction, solidity, fingertip_estimate) or None."""
+def _skin_mask(frame_bgr):
+    """Skin-coloured pixels, excluded from ink so a hand is never read as writing. Not drawn."""
     import cv2
     ycc = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2YCrCb)
     y, cr, cb = ycc[..., 0], ycc[..., 1], ycc[..., 2]
     skin = ((cr >= 135) & (cr <= 180) & (cb >= 85) & (cb <= 135) & (y > 60)).astype(np.uint8) * 255
-    skin = cv2.morphologyEx(skin, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-    contours, _ = cv2.findContours(skin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
-    contour = max(contours, key=cv2.contourArea)
-    area = float(cv2.contourArea(contour))
-    frame_area = float(frame_bgr.shape[0] * frame_bgr.shape[1])
-    if area < HAND_MIN_AREA_FRACTION * frame_area:
-        return None
-    hull = cv2.convexHull(contour)
-    solidity = area / max(float(cv2.contourArea(hull)), 1.0)
-    if solidity < HAND_MIN_SOLIDITY:
-        return None
-    fingertips = 0
-    try:
-        hull_idx = cv2.convexHull(contour, returnPoints=False)
-        defects = cv2.convexityDefects(contour, hull_idx)
-        if defects is not None:
-            depth_min = 0.10 * math.sqrt(area)
-            fingertips = int(np.sum(defects[:, 3] / 256.0 > depth_min)) + 1
-    except cv2.error:
-        fingertips = 0
-    mask = np.zeros(skin.shape, np.uint8)
-    cv2.drawContours(mask, [contour], -1, 255, -1)
-    return mask, contour, area / frame_area, solidity, fingertips
+    return cv2.dilate(skin, np.ones((5, 5), np.uint8)) > 0
+
+
+def _item(label, value, unit, explanation, kind, reliability="moderate"):
+    if reliability not in ("high", "moderate", "low"):
+        reliability = "low"
+    return {"label": label, "value": value, "unit": unit, "explanation": explanation,
+            "kind": kind, "reliability": reliability}
+
+
+def _ink_items(ever, labels, darkness, width, height, fps, ink_counts):
+    """Ink section from the accumulated spiral ink (reference coordinates). Returns (items, unavailable)."""
+    frame_area = float(width * height)
+    measured, estimated, reason = ink_mod.ink_measurements(ever, labels, darkness, min(width, height), frame_area)
+    items: list = []
+    unavailable: list = []
+    if reason:
+        return items, [{"label": "Ink measurements", "reason": reason}]
+    items.append(_item("Ink coverage", round(measured["ink_coverage_of_frame"] * 100, 2), "% of frame",
+                       "Share of the frame covered by the newly drawn spiral ink.", "measured"))
+    shares = measured["ink_colour_share"]
+    colour_text = ", ".join(f"{INK_COLOUR_NAMES[k]} {round(v * 100)}%" for k, v in shares.items() if v >= 0.02)
+    items.append(_item("Ink colour", colour_text or "not classified", "",
+                       "Share of ink pixels by colour family. Black and grey ink is detected by darkness.", "measured"))
+    items.append(_item("Ink darkness (median)", measured["ink_darkness_median"], "levels (0-255)",
+                       "How much darker the ink is than the paper. This is not pen pressure.", "measured"))
+    if "stroke_width_px_median" in measured:
+        items.append(_item("Stroke width (median)", measured["stroke_width_px_median"], "px",
+                           "Typical width of the drawn line, in reference-frame pixels.", "measured"))
+        items.append(_item("Stroke width (spread)", measured["stroke_width_px_std"], "px",
+                           "Standard deviation of the stroke width.", "measured"))
+    if estimated.get("stroke_width_variation") is not None:
+        items.append(_item("Stroke-width consistency", estimated["stroke_width_variation"], "variation (CV)",
+                           "Lower values mean a more even line width. Estimated from the mask, not pressure.",
+                           "estimated", "low"))
+    items.append(_item("Stroke path length", round(measured["stroke_path_length_px"] / max(width, height), 2),
+                       "frame sides", "Approximate length of the drawn line, relative to the frame size.", "estimated", "low"))
+    items.append(_item("Separate ink pieces", measured["ink_components"], "pieces",
+                       "Strokes split into pieces by gaps. More pieces can mean more breaks.", "measured"))
+    items.append(_item("Largest piece share", estimated["continuity_largest_piece_share"], "share",
+                       "Share of ink in the largest connected piece. Closer to 1 means more continuous.", "estimated", "low"))
+    items.append(_item("Stroke endpoints", estimated["stroke_endpoints"], "ends",
+                       "Ends of the thinned stroke. Each break adds two ends.", "estimated", "low"))
+    half = next((i for i, count in enumerate(ink_counts) if count >= 0.5 * max(ink_counts)), None) if ink_counts else None
+    if half is not None and fps > 0:
+        items.append(_item("Half the ink drawn by", round(half / fps, 2), "seconds",
+                           "Time at which half of the final ink had appeared.", "estimated", "low"))
+    items.append(_item("Ink density in bounding box", measured["ink_density_in_bounding_box"], "share",
+                       "Ink pixels divided by the area of the ink's bounding box.", "measured"))
+    return items, unavailable
+
+
+def _timing_items(events, fps, shape):
+    estimated, reason = ink_mod.drawing_timeline(events, fps, shape)
+    if reason:
+        return [], [{"label": "Drawing timing", "reason": reason}]
+    rel = "low"
+    items = [
+        _item("Drawing duration", estimated["drawing_duration_seconds"], "seconds",
+              "Time from the first to the last newly drawn ink. Estimated from the ink, not the pen tip.", "estimated", rel),
+        _item("Pauses while drawing", estimated["pauses"], "pauses",
+              "Gaps of at least half a second with no new ink. A hand that covers the drawing also shows as a pause.",
+              "estimated", rel),
+        _item("Ink-front path length", estimated["front_path_length_frame_sides"], "frame sides",
+              "Path followed by the centroid of new ink. A proxy for the drawing path, not a tracked pen tip.",
+              "estimated", rel),
+    ]
+    if "front_speed_median_frame_sides_per_s" in estimated:
+        items.append(_item("Ink-front speed (median)", estimated["front_speed_median_frame_sides_per_s"],
+                           "frame sides per second", "Median speed of the ink-front path between drawn frames.",
+                           "estimated", rel))
+    unavailable = [{"label": "Pen tip trajectory", "reason": hands_mod.NOT_MEASURED_PEN_TIP},
+                   {"label": "Smoothness of the pen path",
+                    "reason": "Not measured: smoothness of a pen path needs a tracked pen tip."}]
+    return items, unavailable
+
+
+def _hand_items(hand_measured, hand_estimated, hand_unavailable, fps):
+    items: list = []
+    unavailable = [{"label": _HAND_LABELS.get(k, k), "reason": v} for k, v in hand_unavailable.items()]
+    if "frames_with_hand_detected" in hand_measured:
+        items.append(_item("Frames with a detected hand", round(hand_measured["frames_with_hand_detected"] * 100, 1),
+                           "% of frames", "Share of frames where the hand model found a hand.", "measured",
+                           hand_measured.get("hand_detection_confidence", "low")))
+    if "handedness" in hand_measured:
+        items.append(_item("Hand used", hand_measured["handedness"], "", "Most frequent hand label.", "measured",
+                           hand_measured.get("hand_detection_confidence", "low")))
+    rel = hand_measured.get("hand_detection_confidence", "low")
+    for key, label in (("thumb", "Thumb"), ("index", "Index finger"), ("middle", "Middle finger"),
+                       ("ring", "Ring finger"), ("little", "Little finger")):
+        key_name = f"{key}_tip_visible_share"
+        if key_name in hand_measured:
+            items.append(_item(f"{label} tip visible", round(hand_measured[key_name] * 100, 1), "% of frames",
+                               "Share of frames where this fingertip is inside the video frame.", "measured", rel))
+    for key, label in (
+        ("index_flexion_deg_median", "Index finger bend"),
+        ("middle_flexion_deg_median", "Middle finger bend"),
+        ("thumb_flexion_deg_median", "Thumb bend"),
+    ):
+        if key in hand_estimated:
+            items.append(_item(label, hand_estimated[key], "degrees",
+                               "Median bend at the joint, from the landmark angle in the image. 0 is straight.",
+                               "estimated", rel))
+    if "thumb_index_distance_share_of_hand" in hand_estimated:
+        items.append(_item("Thumb-index distance", hand_estimated["thumb_index_distance_share_of_hand"],
+                           "share of hand length", "Distance between thumb and index fingertips. Smaller means a closer pinch.",
+                           "estimated", rel))
+    if "hand_orientation_deg_median" in hand_estimated:
+        items.append(_item("Hand orientation", hand_estimated["hand_orientation_deg_median"], "degrees",
+                           "Direction of the hand in the image. 0 means fingers point up.", "estimated", rel))
+    if "wrist_path_length_hand_scales" in hand_measured and fps > 0:
+        items.append(_item("Wrist travel", hand_measured["wrist_path_length_hand_scales"], "hand lengths",
+                           "Total wrist movement during the video, relative to hand size.", "measured", rel))
+        items.append(_item("Wrist net displacement", hand_measured["wrist_net_displacement_hand_scales"],
+                           "hand lengths", "Distance from the first to the last wrist position.", "measured", rel))
+    if "landmark_motion_median_per_frame" in hand_estimated:
+        items.append(_item("Landmark stability", hand_estimated["landmark_motion_median_per_frame"],
+                           "hand lengths per frame", "Lower means steadier landmarks between frames.", "estimated", rel))
+    grip = hand_estimated.get("grip_configuration")
+    if grip:
+        explanation = (f"{grip['note']} Usable frames: {grip['usable_frames']} "
+                       f"({round(grip['usable_share_of_frames'] * 100)}% of frames).")
+        items.append(_item("Pen-holding estimate", grip["label"], "", explanation, "estimated",
+                           grip["estimate_confidence"]))
+    return items, unavailable
+
+
+_HAND_LABELS = {
+    "hand_landmarks": "Hand landmarks",
+    "grip_configuration": "Pen-holding estimate",
+    "finger_occlusion": "Per-finger occlusion",
+    "pen_tip_tracking": "Pen tip tracking",
+    "finger_pressure": "Pressure and grip force",
+}
+
+
+def _spiral_items(fit):
+    if isinstance(fit, str):
+        return [], [{"label": "Spiral geometry", "reason": fit}]
+    items = [
+        _item("Turns detected", fit["turns_detected"], "turns", "How many turns the ink spans around its centre.", "estimated", "moderate"),
+        _item("Turn spacing", fit["turn_spacing_px"], "px", "Distance between neighbouring turns of the fitted spiral.", "estimated", "moderate"),
+        _item("Deviation from fitted spiral", fit["fit_rms_deviation_px"], "px (RMS)",
+              "How far the ink strays from the best fitted spiral. Not perspective-corrected.", "estimated", "moderate"),
+        _item("Radius variation", round(fit["radius_variation_share_of_spacing"] * 100, 1), "% of turn spacing",
+              "Spread of ink around the fitted spiral, relative to turn spacing.", "estimated", "moderate"),
+        _item("Angular coverage", round(fit["angular_coverage"] * 100, 1), "% of directions",
+              "Share of directions around the centre that contain ink.", "estimated", "moderate"),
+        _item("Centre", f"{fit['centre_px'][0]:.0f}, {fit['centre_px'][1]:.0f}", "px (x, y)",
+              "Centre of the spiral in reference-frame pixels (the first frame of the video).", "estimated", "moderate"),
+    ]
+    return items, []
 
 
 def analyze_spiral_video(data: bytes, filename: str, config: dict) -> tuple[bytes, str, dict]:
-    """Decode a validated video and return an annotated WebM plus the measurement report."""
+    """Decode a validated video and return an annotated WebM plus the analysis report."""
     try:
         import cv2
     except ImportError:
@@ -139,13 +259,29 @@ def analyze_spiral_video(data: bytes, filename: str, config: dict) -> tuple[byte
                 or width > config["SPIRAL_MAX_DIMENSION"] or height > config["SPIRAL_MAX_DIMENSION"]):
             raise APIError(422, "invalid_video_dimensions", "Video frame dimensions or timing metadata are unsupported.")
 
+        # Hand landmarks first, in a separate process. Frames are aligned by index.
+        landmark_frames, _, hand_reason = hands_mod.run_worker(str(source), config)
+        if landmark_frames is None:
+            hands_list = [None] * declared
+        else:
+            hands_list = hands_mod.hand_frames(landmark_frames, width, height)
+            hands_list = (hands_list + [None] * declared)[:declared]
+
         writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"VP80"), fps, (width, height))
         if not writer.isOpened():
             writer.release()
             raise APIError(503, "video_encoder_unavailable", "The server cannot create a playable annotated video.")
 
-        acc = _Accumulator(width, height, fps)
-        ink_ema = None
+        # Pass 2: new ink in reference coordinates, hand overlay and annotated frames.
+        tracker = ink_mod.InkTracker((height, width))
+        accumulator = ink_mod.InkAccumulator((height, width))
+        ink_label = np.zeros((height, width), np.uint8)
+        ink_dark = np.zeros((height, width), np.float32)
+        ink_counts: list[int] = []
+        events: list[tuple[int, float, float]] = []
+        aligner = None
+        reference_marks = reference_paper = None
+        aligned_frames = 0
         frames_written = 0
         cap = None
         try:
@@ -156,14 +292,46 @@ def analyze_spiral_video(data: bytes, filename: str, config: dict) -> tuple[byte
                     break
                 if frame is None or frame.shape[:2] != (height, width):
                     raise APIError(400, "invalid_spiral_video", "The video contains an invalid or inconsistent frame.")
-                hand = _hand_region(frame)
-                hand_mask = hand[0] if hand is not None else None
-                ink = _ink_mask(frame, hand_mask)
-                # Light temporal smoothing reduces flicker in the drawn outline. Measurements use the raw mask.
-                ink_f = (ink > 0).astype(np.float32)
-                ink_ema = ink_f if ink_ema is None else 0.6 * ink_ema + 0.4 * ink_f
-                acc.update(ink, hand, frame_index=frames_written)
-                writer.write(_annotate(frame, ink_ema > 0.5, hand, frames_written / fps))
+                hand = hands_list[frames_written]
+                excluded = _skin_mask(frame)
+                hand_area = hands_mod.hand_mask(frame.shape, hand)
+                if hand_area is not None:
+                    excluded |= hand_area
+                dark, paper = ink_mod.frame_maps(frame)
+                # Ruling is removed by the reference subtraction below, not by line detection here.
+                candidate = ink_mod.candidate_ink(dark, paper, excluded, short_side=min(width, height), remove_lines=False)
+                labels = ink_mod.colour_labels(frame, candidate)
+
+                # The first frame is the reference: its printed marks are the baseline that new ink must exceed.
+                if aligner is None:
+                    aligner = ink_mod.PaperAligner(frame, paper & ~excluded)
+                    reference_marks = ink_mod.reference_marks(dark)
+                    reference_paper = paper
+                    homography = np.eye(3)
+                else:
+                    homography, _inliers = aligner.homography(frame, paper, excluded)
+
+                ink_on = None
+                if homography is not None:
+                    aligned_frames += 1
+                    # Persistence is judged in reference coordinates, so a moving camera does not erase drawn ink.
+                    cand_ref, labels_ref, dark_ref = ink_mod.to_reference(
+                        candidate, labels, dark, homography, (height, width))
+                    stable_ref = tracker.update(cand_ref)
+                    fresh = ink_mod.new_ink(stable_ref, dark_ref, reference_marks, reference_paper)
+                    ink_label[fresh] = labels_ref[fresh]
+                    ink_dark = np.where(fresh, np.maximum(ink_dark, dark_ref), ink_dark)
+                    accepted = accumulator.update(fresh)
+                    count = int(np.count_nonzero(accepted))
+                    if count >= ink_mod.MIN_FRONT_PIXELS:
+                        ys, xs = np.nonzero(accepted)
+                        events.append((frames_written, float(xs.mean()), float(ys.mean())))
+
+                    ever = accumulator.ever
+                    ink_on = ink_mod.project_mask(ever, homography, frame.shape) if ever.any() else None
+                ink_counts.append(int(np.count_nonzero(accumulator.ever)))
+                writer.write(_annotate(frame, ink_on, hand, frames_written / fps,
+                                       aligned=homography is not None))
                 frames_written += 1
         except APIError:
             raise
@@ -182,117 +350,83 @@ def analyze_spiral_video(data: bytes, filename: str, config: dict) -> tuple[byte
         if not readable or first is None or out_count <= 0:
             raise APIError(500, "annotated_video_invalid", "The server did not produce a playable annotated video.")
 
+        # The spiral is separated from any other new handwriting. Stroke and spiral values use only the spiral.
+        ever = accumulator.ever
+        spiral_mask, fit, ignored_pixels = ink_mod.isolate_spiral(ever) if ever.any() else (
+            None, "No new ink was drawn on the paper, so no spiral was fitted.", 0)
+        if spiral_mask is None:
+            ink_items, ink_unavailable = [], [{"label": "Ink and stroke values",
+                                               "reason": f"No spiral was isolated to measure. {fit}"}]
+        else:
+            ink_items, ink_unavailable = _ink_items(spiral_mask, ink_label, ink_dark, width, height, fps, ink_counts)
+            if ignored_pixels > 0:
+                ink_items.append(_item("Other new ink ignored", ignored_pixels, "ink pixels",
+                                       "New ink that is not part of the spiral, such as other writing. Not measured.",
+                                       "measured", "moderate"))
+        aligned_share = aligned_frames / declared
+        ink_items.insert(0, _item("Frames aligned to the first frame", round(aligned_share * 100, 1), "% of frames",
+                                  "Share of frames where the paper matched the first frame. Frames that did not match add no ink.",
+                                  "measured", "high" if aligned_share >= MIN_ALIGNED_SHARE else "low"))
+        timing_items, timing_gaps = _timing_items(events, fps, (height, width))
+        ink_items.extend(timing_items)
+        ink_unavailable.extend(timing_gaps)
+
+        if landmark_frames is None:
+            hand_measured, hand_estimated, hand_unavailable = hands_mod.not_run_metrics(hand_reason)
+        else:
+            hand_measured, hand_estimated, hand_unavailable = hands_mod.hand_metrics(hands_list, declared)
+        hand_items, hand_gaps = _hand_items(hand_measured, hand_estimated, hand_unavailable, fps)
+
+        spiral_items, spiral_gaps = _spiral_items(fit)
+
+        sections = {
+            "ink_and_strokes": {"title": SECTION_TITLES["ink_and_strokes"], "items": ink_items, "unavailable": ink_unavailable},
+            "hand_and_grip": {"title": SECTION_TITLES["hand_and_grip"], "items": hand_items, "unavailable": hand_gaps},
+            "spiral_geometry": {"title": SECTION_TITLES["spiral_geometry"], "items": spiral_items, "unavailable": spiral_gaps},
+        }
         result = {
-            "analysis_type": "opencv_ink_and_hand_image_measurements_not_a_diagnosis",
+            "analysis_type": "opencv_ink_mediapipe_hand_and_spiral_measurements_not_a_diagnosis",
             "analysis_version": ANALYSIS_VERSION,
             "video": {"duration_seconds": round(declared / fps, 3), "fps": round(fps, 3), "frame_count": declared,
                       "width": width, "height": height},
-            "measurements": acc.report(),
-            # Kept for older clients. Pen-tip tracking is not performed in this version.
-            "trajectory": {"tracked_points": 0, "tracking_status": "not_performed_pen_tip_tracking_unavailable"},
-            "candidate_movement_events": [],
-            "visible_appearance_events": [],
+            "hand_landmarks": {
+                "available": landmark_frames is not None,
+                "model": "MediaPipe Hands (hand_landmark_full.tflite bundled in the MediaPipe 0.10.21 wheel)",
+                "frames_with_hand": sum(1 for h in hands_list if h is not None),
+                "frames_total": declared,
+                "reason": hand_reason,
+            },
+            "sections": sections,
             "limitations": list(LIMITATIONS),
             "annotated_video_format": "webm",
-            "annotation_legend": {"blue": "Pen ink and strokes (colour and contrast analysis)",
-                                  "red": "Hand region (skin-colour analysis; finger positions not measured)"},
+            "annotation_legend": {
+                "blue": "Newly drawn spiral ink (not printed text, ruling or marks already on the first frame)",
+                "green": "Hand landmarks (MediaPipe, drawn when the hand is detected)",
+                "red": "Hand outline (convex hull of the landmarks)",
+            },
         }
         return output.read_bytes(), "webm", result
 
 
-def _annotate(frame, ink_on, hand, seconds):
+def _annotate(frame, ink_on, hand, seconds, aligned=True):
+    """One frame with three independent overlays: blue ink, green landmarks, red hand outline."""
     import cv2
     out = frame.copy()
-    if ink_on.any():
+    if ink_on is not None and ink_on.any():
         ink_u8 = ink_on.astype(np.uint8) * 255
         contours, _ = cv2.findContours(ink_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = [c for c in contours if cv2.contourArea(c) >= INK_MIN_COMPONENT][:200]
-        cv2.drawContours(out, contours, -1, (255, 120, 20), 1, cv2.LINE_AA)
-    if hand is not None:
-        _, contour, _, _, _ = hand
-        cv2.drawContours(out, [contour], -1, (40, 40, 230), 2, cv2.LINE_AA)
-    # Legend: small swatches with labels, top-left.
-    cv2.rectangle(out, (8, 8), (262, 62), (250, 250, 246), -1)
-    cv2.rectangle(out, (14, 16), (30, 30), (255, 120, 20), -1)
-    cv2.putText(out, "Pen ink / strokes", (38, 29), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 40, 30), 1, cv2.LINE_AA)
-    cv2.rectangle(out, (14, 40), (30, 54), (40, 40, 230), -1)
-    cv2.putText(out, "Hand region", (38, 53), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 40, 30), 1, cv2.LINE_AA)
-    cv2.putText(out, f"t={seconds:.2f}s  image analysis only", (12, out.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 60, 30), 1, cv2.LINE_AA)
+        # Thin strokes enclose almost no area, so keep outlines by length, not area.
+        contours = [c for c in contours if cv2.arcLength(c, False) >= 8][:300]
+        cv2.drawContours(out, contours, -1, BLUE, 1, cv2.LINE_AA)
+    hands_mod.draw_hand(out, hand)
+    # Legend: swatches with labels, top-left.
+    cv2.rectangle(out, (8, 8), (292, 84), (250, 250, 246), -1)
+    cv2.rectangle(out, (14, 16), (30, 30), BLUE, -1)
+    cv2.putText(out, "New spiral ink", (38, 29), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 40, 30), 1, cv2.LINE_AA)
+    cv2.rectangle(out, (14, 40), (30, 54), GREEN, -1)
+    cv2.putText(out, "Hand landmarks", (38, 53), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 40, 30), 1, cv2.LINE_AA)
+    cv2.rectangle(out, (14, 64), (30, 78), RED, -1)
+    cv2.putText(out, "Hand outline", (38, 77), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 40, 30), 1, cv2.LINE_AA)
+    status = f"t={seconds:.2f}s" + ("" if aligned else "  paper not aligned: no ink drawn")
+    cv2.putText(out, status, (12, out.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 60, 30), 1, cv2.LINE_AA)
     return out
-
-
-class _Accumulator:
-    """Collects per-frame results for both detectors without sharing their masks or coordinates."""
-
-    def __init__(self, width: int, height: int, fps: float):
-        self.width, self.height, self.fps = width, height, fps
-        self.ink_counts: list[int] = []
-        self.last_ink: np.ndarray | None = None
-        self.hand_centroids: list[tuple[float, float]] = []
-        self.hand_areas: list[float] = []
-        self.hand_solidity: list[float] = []
-        self.hand_fingertips: list[int] = []
-        self.frames = 0
-
-    def update(self, ink: np.ndarray, hand, frame_index: int) -> None:
-        import cv2
-        self.frames += 1
-        self.ink_counts.append(int(np.count_nonzero(ink)))
-        self.last_ink = ink
-        if hand is not None:
-            mask, contour, area_fraction, solidity, fingertips = hand
-            moments = cv2.moments(contour)
-            if moments["m00"] > 0:
-                self.hand_centroids.append((moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]))
-            self.hand_areas.append(area_fraction)
-            self.hand_solidity.append(solidity)
-            self.hand_fingertips.append(fingertips)
-
-    def report(self) -> dict:
-        import cv2
-        measured: dict = {}
-        estimated: dict = {}
-        ink_total = self.last_ink is not None and int(np.count_nonzero(self.last_ink)) >= 30
-        unavailable = dict(UNAVAILABLE)
-
-        # BLUE: ink measurements on the final frame.
-        if ink_total:
-            ink = self.last_ink > 0
-            frame_area = float(self.width * self.height)
-            measured["ink_pixels_final_frame"] = int(ink.sum())
-            measured["ink_coverage_of_frame"] = round(float(ink.sum()) / frame_area, 5)
-            distance = cv2.distanceTransform(ink.astype(np.uint8), cv2.DIST_L2, 3)
-            widths = distance[ink] * 2.0
-            measured["stroke_width_px_median"] = round(float(np.median(widths)), 2)
-            estimated["stroke_width_variation"] = round(float(widths.std() / widths.mean()), 3) if widths.mean() > 0 else None
-            count, _, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
-            areas = stats[1:, cv2.CC_STAT_AREA]
-            measured["ink_components"] = int(areas.size)
-            estimated["continuity_largest_piece_share"] = round(float(areas.max() / areas.sum()), 3) if areas.size else None
-            counts = np.asarray(self.ink_counts, dtype=float)
-            if counts.size and counts.max() > 0:
-                growth = counts / counts.max()
-                estimated["ink_growth_frame_at_half_of_final"] = int(np.argmax(growth >= 0.5)) if np.any(growth >= 0.5) else None
-        else:
-            measured["ink_pixels_final_frame"] = int(np.count_nonzero(self.last_ink)) if self.last_ink is not None else 0
-            estimated["ink_status"] = "insufficient_blue_ink_detected"
-
-        # RED: hand measurements, computed only from the hand detector.
-        hand_fraction = len(self.hand_centroids) / max(self.frames, 1)
-        measured["frames_with_hand_region"] = round(hand_fraction, 3)
-        if len(self.hand_centroids) >= max(10, int(0.5 * self.frames)):
-            centres = np.asarray(self.hand_centroids, dtype=float)
-            steps = np.linalg.norm(np.diff(centres, axis=0), axis=1) if len(centres) > 1 else np.array([0.0])
-            diagonal = math.hypot(self.width, self.height)
-            estimated["hand_stability_median_step"] = round(float(np.median(steps) / diagonal), 5)
-            estimated["hand_region_area_median"] = round(float(np.median(self.hand_areas)), 4)
-            estimated["hand_region_solidity_median"] = round(float(np.median(self.hand_solidity)), 3)
-            estimated["fingertips_visible_estimate_median"] = int(np.median(self.hand_fingertips))
-        else:
-            estimated["hand_status"] = "insufficient_hand_detection"
-        if len(self.hand_centroids) == 0:
-            unavailable.setdefault("hand_region", "No hand region passed the confidence checks in this video.")
-
-        return {"directly_measured_image_features": measured,
-                "estimated_visual_proxies": estimated,
-                "unavailable_measurements": unavailable}

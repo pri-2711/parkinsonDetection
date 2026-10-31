@@ -5,36 +5,31 @@ interface Props {
   assessmentId: number;
 }
 
-const UNAVAILABLE_LABELS: Record<string, string> = {
-  finger_landmarks: 'Individual finger positions',
-  grip_posture: 'Pen-holding grip posture',
-  pen_tip_tracking: 'Pen-tip tracking',
-  pressure: 'Pen pressure',
-  grip_force: 'Grip force',
-  grip_angle: 'Grip angle',
-  fitted_spiral_deviation: 'Deviation from a fitted ideal spiral',
-  hand_region: 'Hand region',
-};
-
-function pct(value: unknown): string {
-  return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : 'not measured';
+interface Item {
+  label: string;
+  value: string | number;
+  unit: string;
+  explanation: string;
+  kind: 'measured' | 'estimated';
+  reliability: 'high' | 'moderate' | 'low';
 }
 
-function num(value: unknown, suffix = ''): string {
-  return typeof value === 'number' ? `${value}${suffix}` : 'not measured';
+interface Unavailable {
+  label: string;
+  reason: string;
 }
 
-function MeasureRows({ rows }: { rows: [string, string][] }) {
-  return (
-    <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) auto', gap: '0.3rem 1rem', fontSize: '0.9rem' }}>
-      {rows.map(([label, value]) => (
-        <div key={label} style={{ display: 'contents' }}>
-          <dt style={{ color: 'var(--text-light)' }}>{label}</dt>
-          <dd style={{ margin: 0, fontWeight: 600, color: 'var(--text-dark)', textAlign: 'right' }}>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
+const SECTION_ORDER: [string, string][] = [
+  ['ink_and_strokes', 'Ink & Stroke Analysis'],
+  ['hand_and_grip', 'Hand & Grip Analysis'],
+  ['spiral_geometry', 'Spiral Geometry Analysis'],
+];
+
+const RELIABILITY_LABEL: Record<string, string> = { high: 'High', moderate: 'Moderate', low: 'Low' };
+
+function formatValue(value: string | number): string {
+  if (typeof value === 'number') return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return value;
 }
 
 function Swatch({ color, label }: { color: string; label: string }) {
@@ -46,13 +41,29 @@ function Swatch({ color, label }: { color: string; label: string }) {
   );
 }
 
-// Two separate analyses: blue ink and strokes, red hand region. Measured, estimated and unavailable values are kept apart.
+function MeasureCard({ item }: { item: Item }) {
+  const isText = typeof item.value === 'string';
+  return (
+    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 8, background: '#fff', padding: '0.7rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.82rem', color: 'var(--text-light)' }}>{item.label}</span>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-light)' }}>
+          {item.kind === 'measured' ? 'Measured' : 'Estimated'} · {RELIABILITY_LABEL[item.reliability] ?? item.reliability}
+        </span>
+      </div>
+      <div style={{ fontSize: isText ? '0.95rem' : '1.25rem', fontWeight: 600, color: 'var(--text-dark)', overflowWrap: 'anywhere' }}>
+        {formatValue(item.value)}
+        {item.unit && <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-light)', marginLeft: '0.35rem' }}>{item.unit}</span>}
+      </div>
+      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-light)' }}>{item.explanation}</p>
+    </div>
+  );
+}
+
+// Ink, hand and spiral values come from separate analyses. Each shows what was measured, what is estimated, and what could not be measured.
 export function VideoObservations({ analysis, assessmentId }: Props) {
-  const measurements = analysis.measurements;
-  const measured = measurements?.directly_measured_image_features ?? {};
-  const proxies = measurements?.estimated_visual_proxies ?? {};
-  const unavailable: Record<string, string> = measurements?.unavailable_measurements ?? {};
-  const legacy = !measurements;
+  const sections = analysis.sections;
+  const legacy = !sections;
   // Analyses saved before the WebM change store an MP4 (MPEG-4 Part 2) file that Chromium cannot decode.
   const unsupportedFile = analysis.annotated_video_format !== undefined && analysis.annotated_video_format !== 'webm';
 
@@ -67,8 +78,9 @@ export function VideoObservations({ analysis, assessmentId }: Props) {
       </p>
 
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
-        <Swatch color="#1E78FF" label="Pen ink / strokes" />
-        <Swatch color="#E62828" label="Hand region" />
+        <Swatch color="#1E78FF" label="Newly drawn spiral ink" />
+        <Swatch color="#3CC83C" label="Hand landmarks" />
+        <Swatch color="#E62828" label="Hand outline" />
       </div>
 
       {legacy && (
@@ -77,62 +89,45 @@ export function VideoObservations({ analysis, assessmentId }: Props) {
         </p>
       )}
 
-      {!legacy && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
-          <div>
-            <h4 style={{ margin: '0 0 0.4rem', fontSize: '0.9rem', color: '#1E5FCC' }}>Ink and strokes (blue)</h4>
-            {proxies.ink_status ? (
-              <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-light)' }}>
-                Too little blue ink was detected to measure the strokes. Check that the pen ink is blue or violet and the page is well lit.
-              </p>
+      {!legacy && SECTION_ORDER.map(([key, fallbackTitle]) => {
+        const section = sections[key] ?? { title: fallbackTitle, items: [], unavailable: [] };
+        const items: Item[] = section.items ?? [];
+        const unavailable: Unavailable[] = section.unavailable ?? [];
+        return (
+          <section key={key} style={{ marginTop: '1rem' }}>
+            <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.95rem', color: 'var(--sage-dark)' }}>{section.title ?? fallbackTitle}</h4>
+            {items.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.6rem' }}>
+                {items.map((item) => <MeasureCard key={item.label} item={item} />)}
+              </div>
             ) : (
-              <MeasureRows rows={[
-                ['Ink coverage of frame', pct(measured.ink_coverage_of_frame)],
-                ['Median stroke width', num(measured.stroke_width_px_median, ' px')],
-                ['Stroke width variation', num(proxies.stroke_width_variation)],
-                ['Continuity (largest piece share)', pct(proxies.continuity_largest_piece_share)],
-                ['Separate ink pieces', num(measured.ink_components)],
-              ]} />
+              <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-light)' }}>No values could be measured in this section.</p>
             )}
-          </div>
-          <div>
-            <h4 style={{ margin: '0 0 0.4rem', fontSize: '0.9rem', color: '#B81E1E' }}>Hand (red)</h4>
-            {proxies.hand_status ? (
-              <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-light)' }}>
-                The hand was not detected reliably enough to report its position.
-              </p>
-            ) : (
-              <MeasureRows rows={[
-                ['Frames with hand region', pct(measured.frames_with_hand_region)],
-                ['Hand region size (median)', pct(proxies.hand_region_area_median)],
-                ['Hand stability (median step)', num(proxies.hand_stability_median_step)],
-                ['Visible fingertips (estimate)', num(proxies.fingertips_visible_estimate_median)],
-              ]} />
+            {unavailable.length > 0 && (
+              <details style={{ marginTop: '0.5rem' }}>
+                <summary style={{ fontSize: '0.85rem' }}>Not measured ({unavailable.length})</summary>
+                <ul style={{ fontSize: '0.85rem', color: 'var(--text-light)', margin: '0.4rem 0 0' }}>
+                  {unavailable.map((entry) => (
+                    <li key={entry.label}><strong>{entry.label}:</strong> {entry.reason}</li>
+                  ))}
+                </ul>
+              </details>
             )}
-          </div>
-        </div>
-      )}
+          </section>
+        );
+      })}
 
       {unsupportedFile ? (
         <p role="alert" className="error" style={{ margin: '0.8rem 0 0' }}>
           The annotated file from this analysis uses a format this browser cannot play. Analyse the video again to create a playable copy. The original upload is unchanged.
         </p>
       ) : (
-        <AnnotatedVideo assessmentId={assessmentId} analysisStatus={analysis.status} videoId={analysis.video_id} />
+        <div style={{ marginTop: '1rem' }}>
+          <AnnotatedVideo assessmentId={assessmentId} analysisStatus={analysis.status} videoId={analysis.video_id} />
+        </div>
       )}
 
-      {Object.keys(unavailable).length > 0 && (
-        <details style={{ marginTop: '0.9rem' }}>
-          <summary>Not measured, and why</summary>
-          <ul style={{ fontSize: '0.88rem', color: 'var(--text-light)' }}>
-            {Object.entries(unavailable).map(([key, reason]) => (
-              <li key={key}><strong>{UNAVAILABLE_LABELS[key] ?? key}:</strong> {reason}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      <details style={{ marginTop: '0.6rem' }}>
+      <details style={{ marginTop: '0.9rem' }}>
         <summary>Limitations</summary>
         <ul style={{ fontSize: '0.88rem', color: 'var(--text-light)' }}>
           {(analysis.limitations ?? []).map((item: string) => <li key={item}>{item}</li>)}

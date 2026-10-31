@@ -65,6 +65,7 @@ If `.env` already exists, the command leaves it unchanged. `.env.example` lists 
 | `CORS_ORIGINS` | unset: `localhost` and `127.0.0.1` on any port | Browser origins allowed to call the API. Set a comma-separated list only for known deployment origins. |
 | `MODEL_ARTIFACT_DIR` | `experiments/regularized_svm_rf/results/artifacts` | Tremor, handwriting and legacy classifiers. |
 | `SPEECH_AUDIO_V2_ARTIFACT_DIR` | `experiments/speech_audio_v2/artifacts` | Speech reading-model files. |
+| `HAND_LANDMARK_PYTHON` | `.venv-mediapipe` | Optional. Python executable with MediaPipe installed, used only for spiral-video hand landmarks. Defaults to the repository `.venv-mediapipe` when it exists. |
 
 ### 5. Database
 
@@ -178,6 +179,17 @@ python -c "import secrets; from pathlib import Path; p=Path('.env'); p.exists() 
 The backend reads `APP_SECRET_KEY` from the repository-root `.env` when the Flask app is created. The generated `.env` is ignored by Git; do not share it. Existing accounts and password hashes stay in `data/parkinson_app.db`.
 
 `VITE_API_URL` defaults to `http://127.0.0.1:5000`; only change it when the backend runs elsewhere.
+
+#### Optional: hand landmarks for spiral videos
+
+Hand landmarks use MediaPipe Hands. MediaPipe pins its own NumPy and OpenCV versions, which conflict with the backend, so it runs in a separate environment. Without it, the video analysis still measures ink and the spiral, and reports hand values as not measured.
+
+```powershell
+python -m venv .venv-mediapipe
+.\.venv-mediapipe\Scripts\python.exe -m pip install mediapipe==0.10.21 numpy==1.26.4
+```
+
+The server uses `.venv-mediapipe` in the repository root automatically. To use another interpreter, set `HAND_LANDMARK_PYTHON` in `.env`. The hand model ships inside the MediaPipe wheel (`hand_landmark_full.tflite`, Apache-2.0), so no separate download is needed. `GET /api/health` reports whether an interpreter was found. If the worker cannot run or fails, the analysis shows the reason under Hand & Grip Analysis instead of a detection rate.
 
 ## Running the Application
 

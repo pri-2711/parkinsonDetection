@@ -45,10 +45,12 @@ def health():
     # Overall health covers the modalities that can currently predict. Speech
     # extraction is reported separately so a blocked modality is not a fault.
     enabled_models_loaded = all(readiness[name]["model_loaded"] for name in ("handwriting", "tremor"))
+    from app_backend.services.hand_landmarks import landmark_status
     from app_backend.services.spiral_video_analysis import ANALYSIS_VERSION
     return jsonify({
         "status": "ok" if enabled_models_loaded else "degraded",
         "versions": {"spiral_video_analysis": ANALYSIS_VERSION},
+        "spiral_video_hand_landmarks": landmark_status(current_app.config),
         "models": readiness,
         "capabilities": {
             "speech_feature_extraction": True,

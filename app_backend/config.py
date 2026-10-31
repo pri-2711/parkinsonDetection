@@ -63,6 +63,11 @@ class BackendConfig:
     SPIRAL_MAX_FRAMES = int(os.getenv("SPIRAL_MAX_FRAMES", 1200))
     SPIRAL_MAX_DIMENSION = int(os.getenv("SPIRAL_MAX_DIMENSION", 4096))
     SPIRAL_MAX_TOTAL_PIXELS = int(os.getenv("SPIRAL_MAX_TOTAL_PIXELS", 2_000_000_000))
+    # Python with MediaPipe installed, used only for hand landmarks (see services/hand_landmarks.py). Defaults to
+    # the repository's .venv-mediapipe when it exists, so no setting is needed after the venv is created.
+    HAND_LANDMARK_PYTHON = os.getenv("HAND_LANDMARK_PYTHON", "") or str(
+        REPOSITORY_ROOT / ".venv-mediapipe" / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+    )
     UPLOAD_TEMP_DIR = os.getenv("UPLOAD_TEMP_DIR") or str(
         Path(tempfile.gettempdir()) / "parkinson-assessment-uploads"
     )

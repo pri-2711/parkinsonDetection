@@ -7,7 +7,7 @@ import type { CanvasSample, CanvasTelemetrySummary } from '../features/handwriti
 import { FileDropZone } from '../components/FileDropZone';
 
 // Must match ANALYSIS_VERSION in app_backend/services/spiral_video_analysis.py.
-const SPIRAL_ANALYSIS_VERSION = 'ink-hand-v2';
+const SPIRAL_ANALYSIS_VERSION = 'ink-hand-v4';
 import { VideoObservations } from '../components/VideoObservations';
 
 export function Handwriting() {
@@ -56,7 +56,7 @@ export function Handwriting() {
     try {
       const response = await assessmentsApi.analyzeSpiralVideo(Number(id), videoFile);
       const analysis = response.analysis;
-      if (!analysis?.measurements || analysis.analysis_version !== SPIRAL_ANALYSIS_VERSION || analysis.annotated_video_format !== 'webm') {
+      if (!analysis?.sections || analysis.analysis_version !== SPIRAL_ANALYSIS_VERSION || analysis.annotated_video_format !== 'webm') {
         throw new Error(
           'The server answered with an analysis from an older version, so the result was not displayed. ' +
           'Stop the backend that is running on this address, start it again with python -m app_backend, and analyse the video again.'
@@ -336,7 +336,7 @@ export function Handwriting() {
         {tab === 'video' && (
           <section id="panel-video" role="tabpanel" aria-labelledby="tab-video">
             <p style={{ color: 'var(--text-light)', fontSize: '0.9rem', margin: '0 0 0.9rem' }}>
-              Upload a recording of a spiral. The app detects the ink on the paper, ignores the hand and pen, and produces an annotated copy of the video.
+              Upload a recording of a spiral. The app finds the ink on the paper, tracks the hand, measures the spiral, and produces an annotated copy of the video. The original is kept unchanged.
             </p>
             <FileDropZone
               id="spiral-video"

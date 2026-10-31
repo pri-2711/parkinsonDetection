@@ -351,12 +351,21 @@ class DatabaseAssessmentTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.get_json())
         analysis = response.get_json()["analysis"]
-        self.assertEqual(analysis["analysis_type"], "opencv_ink_and_hand_image_measurements_not_a_diagnosis")
-        self.assertEqual(analysis["annotation_legend"]["red"].split(" ")[0], "Hand")
+        self.assertEqual(analysis["analysis_type"], "opencv_ink_mediapipe_hand_and_spiral_measurements_not_a_diagnosis")
+        self.assertEqual(analysis["analysis_version"], "ink-hand-v4")
+        self.assertEqual(analysis["annotation_legend"]["green"].split(" ")[0], "Hand")
         self.assertEqual(analysis["video"]["frame_count"], 36)
-        self.assertIn("pen_tip_tracking", analysis["measurements"]["unavailable_measurements"])
-        self.assertIn("pressure", analysis["measurements"]["unavailable_measurements"])
-        self.assertEqual(analysis["candidate_movement_events"], [])
+        # Hand values follow the worker: when it did not run, the reason is listed and no detection rate is shown.
+        hand_labels = [item["label"] for item in analysis["sections"]["hand_and_grip"]["unavailable"]]
+        hand_items = [item["label"] for item in analysis["sections"]["hand_and_grip"]["items"]]
+        if analysis["hand_landmarks"]["available"]:
+            self.assertIn("Frames with a detected hand", hand_items)
+        else:
+            self.assertIn("Hand landmarks", hand_labels)
+            self.assertNotIn("Frames with a detected hand", hand_items)
+        self.assertIn("Pen tip tracking", hand_labels)
+        self.assertIn("Pressure and grip force", hand_labels)
+        self.assertEqual(set(analysis["sections"]), {"ink_and_strokes", "hand_and_grip", "spiral_geometry"})
         saved = self.db.get_assessment(assessment["id"], user["id"])
         sidecar = saved["steps"]["spiral"]["outcome"]["video_analysis"]
         self.assertEqual(sidecar["video_id"], analysis["video_id"])

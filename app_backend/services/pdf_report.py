@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
+from html import escape
 from typing import Any
 
 from reportlab.lib import colors
@@ -434,23 +435,22 @@ def generate_assessment_pdf(
 
     video_analysis = sp_outcome.get("video_analysis", {}) if isinstance(sp_outcome, dict) else {}
     if video_analysis:
-        trajectory = video_analysis.get("trajectory", {})
         video_lines = [
-            "<b>Separate spiral video analysis (OpenCV visual baseline; no classifier used):</b>",
-            f"Frames: {video_analysis.get('video', {}).get('frame_count', 'N/A')} | Duration: {video_analysis.get('video', {}).get('duration_seconds', 'N/A')} s | "
-            f"Tracked candidate points: {trajectory.get('tracked_points', 0)}",
+            "<b>Separate spiral video analysis (image measurements from OpenCV and MediaPipe; no classifier used):</b>",
+            f"Frames: {video_analysis.get('video', {}).get('frame_count', 'N/A')} | Duration: {video_analysis.get('video', {}).get('duration_seconds', 'N/A')} s",
         ]
-        if trajectory.get("path_length_px") is not None:
-            video_lines.append(
-                f"Visible-change path: {trajectory.get('path_length_px')} px | Mean speed: {trajectory.get('mean_speed_px_per_second')} px/s | "
-                f"Speed variation (CV): {trajectory.get('speed_coefficient_of_variation')} | Mean direction change: {trajectory.get('mean_direction_change_degrees')} degrees"
+        for key, fallback in (("ink_and_strokes", "Ink and strokes"), ("hand_and_grip", "Hand and grip"),
+                              ("spiral_geometry", "Spiral geometry")):
+            section = video_analysis.get("sections", {}).get(key, {})
+            items = section.get("items", [])
+            values = "; ".join(
+                f"{escape(str(item.get('label', '')))}: {escape(str(item.get('value', '')))}"
+                + (f" {escape(str(item.get('unit')))}" if item.get("unit") else "")
+                for item in items
             )
-        video_lines.append(
-            f"Red candidate movement annotations: {len(video_analysis.get('candidate_movement_events', []))} | "
-            f"Blue visible-appearance observations: {len(video_analysis.get('visible_appearance_events', []))}. "
-            "Annotated video is available through authenticated assessment history."
-        )
-        video_lines.extend(f"<i>Limitation: {item}</i>" for item in video_analysis.get("limitations", []))
+            video_lines.append(f"<b>{escape(section.get('title', fallback))}:</b> {values or 'no values measured'}")
+        video_lines.append("Annotated video is available through authenticated assessment history.")
+        video_lines.extend(f"<i>Limitation: {escape(str(item))}</i>" for item in video_analysis.get("limitations", []))
         story.append(Paragraph("<br/>".join(video_lines), small_note_style))
 
     story.append(Spacer(1, 14))

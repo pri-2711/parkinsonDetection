@@ -33,7 +33,7 @@ const MODALITY_STATUS: { name: string; kind: StatusKind; detail: string }[] = [
   { name: 'Tremor (7 UPDRS III items)', kind: 'implemented', detail: 'Calibrated SVM on exact integer ratings 0–4. Saved probability per assessment.' },
   { name: 'Handwriting / spiral (tablet telemetry)', kind: 'implemented', detail: 'Calibrated SVM only for complete measured tablet data (x, y, z, pressure, grip angle, timestamp).' },
   { name: 'Spiral canvas telemetry', kind: 'observation', detail: 'Browser pointer coordinates and timing. Not classifier-compatible; shown for inspection.' },
-  { name: 'Spiral video analysis', kind: 'observation', detail: 'Blue ink and red hand regions from colour and contrast analysis. Visual observations only; finger positions and pressure are not measured; not used by any classifier.' },
+  { name: 'Spiral video analysis', kind: 'observation', detail: 'Newly drawn spiral ink (blue), found by aligning each frame to the first frame so printed text and ruling are not counted. Hand outline (red) and MediaPipe landmarks (green), with grip estimates only where the fingers are visible. Pen tip and pressure are not measured; not used by any classifier.' },
   { name: 'Speech, reading passage (speech_audio_v2)', kind: 'experimental', detail: 'Reading-mode model trained on 37 participants. Experimental: its cross-validated accuracy is near the majority-class baseline. Sustained vowels have no model.' },
   { name: 'Speech legacy SVM (45 precomputed features)', kind: 'baseline', detail: 'Archived validation of precomputed UCI descriptors. Never applied to speech_audio_v2 features.' },
 ];
